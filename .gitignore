@@ -50,3 +50,6 @@ scratch/
 .DS_Store
 
 
+
+app/static/
+src/Emailimages/

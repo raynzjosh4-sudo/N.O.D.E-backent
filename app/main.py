@@ -11,6 +11,13 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
 
 from app.authentication.email_auth.router import router as auth_router
+from app.products.router import router as products_router
+from app.orders.router import router as orders_router
+from app.profile.router import router as profile_router
+from app.saved_items.router import router as saved_items_router
+from app.records.router import router as records_router
+from app.notifications.router import router as notifications_router
+from app.promotions.router import router as promotions_router
 from pathlib import Path
 from starlette.staticfiles import StaticFiles
 
@@ -59,6 +66,13 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(auth_router)
+app.include_router(products_router)
+app.include_router(orders_router)
+app.include_router(profile_router)
+app.include_router(saved_items_router)
+app.include_router(records_router)
+app.include_router(notifications_router)
+app.include_router(promotions_router)
 
 # Mount static files for email images and assets
 static_path = Path(__file__).parent / "static"

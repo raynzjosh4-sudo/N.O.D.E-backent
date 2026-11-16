@@ -71,3 +71,14 @@ def validate_production_config() -> None:
     allowed_hosts()
     if not resend_api_key():
         raise RuntimeError("Production requires a valid RESEND_API_KEY.")
+
+
+def supabase_url() -> str:
+    return os.getenv("SUPABASE_URL", "https://lihoygvdnnfqodjjxqnz.supabase.co").strip()
+
+
+def supabase_anon_key() -> str:
+    return os.getenv(
+        "SUPABASE_ANON_KEY",
+        "sb_publishable_xknRF_gqAzQqznqNvSONRg_j6GkQdrS",
+    ).strip()
