@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.core.deps import require_admin
 from app.admin.schemas import (
@@ -13,6 +13,12 @@ from app.admin.supabase_client import (
     set_user_role,
     insert_category,
     fetch_users,
+)
+from app.profile.supabase_client import fetch_user, fetch_business
+from app.services.email_service import (
+    build_supplier_status_email_html,
+    create_in_app_notification,
+    send_order_email,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -36,6 +42,46 @@ async def list_supplier_applications(
     return await fetch_potential_suppliers()
 
 
+async def _notify_supplier_status_change(user_id: str, is_approved: bool):
+    try:
+        user = await fetch_user(user_id)
+        if not user:
+            return
+        email = user.get("email")
+        full_name = user.get("full_name") or "Valued Partner"
+        
+        # 1. In-App Notification
+        title = "Supplier Account Approved!" if is_approved else "Supplier Status Revoked"
+        body = (
+            "Congratulations! Your supplier application was confirmed by administration. You can now post and manage products."
+            if is_approved
+            else "Your supplier privileges have been revoked by administration."
+        )
+        await create_in_app_notification(
+            user_id=user_id,
+            title=title,
+            body=body,
+            category="account",
+            metadata={"role": "supplier" if is_approved else "customer"},
+        )
+
+        # 2. Email Notification
+        if email:
+            html = build_supplier_status_email_html(
+                recipient_name=full_name,
+                user_id=user_id,
+                is_approved=is_approved,
+            )
+            subj = "N.O.D.E. Supplier Account Approved" if is_approved else "N.O.D.E. Supplier Privileges Update"
+            await send_order_email(
+                recipient=email,
+                subject=subj,
+                html_content=html,
+            )
+    except Exception as e:
+        print(f"Error sending supplier status notification: {e}")
+
+
 @router.post(
     "/suppliers/{user_id}/approve",
     response_model=SupplierActionResponse,
@@ -43,12 +89,14 @@ async def list_supplier_applications(
 )
 async def approve_supplier(
     user_id: str,
+    background_tasks: BackgroundTasks,
     admin_user: dict = Depends(require_admin),
 ):
     """
     Elevates a user's role to 'supplier' so they can post and manage products.
     """
     updated = await set_user_role(user_id=user_id, new_role="supplier")
+    background_tasks.add_task(_notify_supplier_status_change, user_id=user_id, is_approved=True)
     return SupplierActionResponse(
         user_id=user_id,
         role="supplier",
@@ -63,12 +111,14 @@ async def approve_supplier(
 )
 async def revoke_supplier(
     user_id: str,
+    background_tasks: BackgroundTasks,
     admin_user: dict = Depends(require_admin),
 ):
     """
     Reverts a supplier's role back to 'customer'.
     """
     updated = await set_user_role(user_id=user_id, new_role="customer")
+    background_tasks.add_task(_notify_supplier_status_change, user_id=user_id, is_approved=False)
     return SupplierActionResponse(
         user_id=user_id,
         role="customer",

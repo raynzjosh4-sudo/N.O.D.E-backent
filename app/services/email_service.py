@@ -143,3 +143,38 @@ def build_order_status_email_html(
         "ROLE_SUB": role_sub,
     }
     return render_order_template("order_status_update.html", context)
+
+
+def build_supplier_status_email_html(
+    *,
+    recipient_name: str,
+    user_id: str,
+    is_approved: bool,
+) -> str:
+    """
+    Render supplier approval or revocation email from app/templates/supplier_status_update.html.
+    """
+    if is_approved:
+        header_badge = "OFFICIAL SUPPLIER APPROVAL"
+        status_title = "Congratulations! Your Supplier Account is Active"
+        accent_color = "#22C55E"
+        message = "Your business profile has been thoroughly reviewed and confirmed by platform administration. You now possess full supplier privileges."
+        next_steps = "You can now publish products, configure tiered wholesale pricing, manage catalog listings, and fulfill incoming merchant orders directly."
+    else:
+        header_badge = "SUPPLIER PRIVILEGES REVOCATION"
+        status_title = "Supplier Privileges Have Been Revoked"
+        accent_color = "#EF4444"
+        message = "Your supplier status has been revoked by administration. Your account has returned to standard customer/buyer tier."
+        next_steps = "You will no longer be able to post new products or update existing inventory listings. Existing pending orders must still be completed."
+
+    context = {
+        "RECIPIENT_NAME": recipient_name,
+        "USER_ID": user_id,
+        "HEADER_BADGE": header_badge,
+        "STATUS_TITLE": status_title,
+        "ACCENT_COLOR": accent_color,
+        "MESSAGE": message,
+        "NEXT_STEPS_TEXT": next_steps,
+    }
+    return render_order_template("supplier_status_update.html", context)
+
