@@ -109,3 +109,69 @@ class PaginatedProducts(BaseModel):
     page: int
     limit: int
     has_more: bool
+
+
+class ProductCreateRequest(BaseModel):
+    sku: str
+    name: str
+    brand: str
+    srp: float
+    category_id: str
+    supplier_id: str
+    image_url: str
+    slug: Optional[str] = None
+    media_urls: List[str] = []
+    aspect_ratio: float = 1.0
+    price_tiers: List[PriceTier] = []
+    hs_code: Optional[str] = ""
+    weight_kg: Optional[float] = 0.0
+    volume_cbm: Optional[float] = 0.0
+    origin_country: Optional[str] = ""
+    unbs_number: Optional[str] = ""
+    denier: Optional[str] = ""
+    material: Optional[str] = ""
+    current_stock: int = 0
+    lead_time_days: int = 0
+    warehouse_loc: Optional[str] = ""
+    seo_title: Optional[str] = ""
+    seo_description: Optional[str] = ""
+    search_keywords: List[str] = []
+    available_colors: List[ProductColor] = []
+    available_sizes: List[ProductSize] = []
+    available_materials: List[ProductMaterial] = []
+    variant_label: str = "Size"
+    support_info: Optional[ProductSupport] = None
+    trading_terms: Optional[TradingTerms] = None
+
+
+class ProductUpdateRequest(BaseModel):
+    sku: Optional[str] = None
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    slug: Optional[str] = None
+    srp: Optional[float] = None
+    category_id: Optional[str] = None
+    supplier_id: Optional[str] = None
+    image_url: Optional[str] = None
+    media_urls: Optional[List[str]] = None
+    aspect_ratio: Optional[float] = None
+    price_tiers: Optional[List[PriceTier]] = None
+    hs_code: Optional[str] = None
+    weight_kg: Optional[float] = None
+    volume_cbm: Optional[float] = None
+    origin_country: Optional[str] = None
+    unbs_number: Optional[str] = None
+    denier: Optional[str] = None
+    material: Optional[str] = None
+    current_stock: Optional[int] = None
+    lead_time_days: Optional[int] = None
+    warehouse_loc: Optional[str] = None
+    seo_title: Optional[str] = None
+    seo_description: Optional[str] = None
+    search_keywords: Optional[List[str]] = None
+    available_colors: Optional[List[ProductColor]] = None
+    available_sizes: Optional[List[ProductSize]] = None
+    available_materials: Optional[List[ProductMaterial]] = None
+    variant_label: Optional[str] = None
+    support_info: Optional[ProductSupport] = None
+    trading_terms: Optional[TradingTerms] = None

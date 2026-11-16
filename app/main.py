@@ -18,6 +18,7 @@ from app.saved_items.router import router as saved_items_router
 from app.records.router import router as records_router
 from app.notifications.router import router as notifications_router
 from app.promotions.router import router as promotions_router
+from app.admin.router import router as admin_router
 from pathlib import Path
 from starlette.staticfiles import StaticFiles
 
@@ -62,7 +63,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(auth_router)
@@ -73,6 +74,7 @@ app.include_router(saved_items_router)
 app.include_router(records_router)
 app.include_router(notifications_router)
 app.include_router(promotions_router)
+app.include_router(admin_router)
 
 # Mount static files for email images and assets
 static_path = Path(__file__).parent / "static"

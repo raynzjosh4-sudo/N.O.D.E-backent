@@ -120,3 +120,57 @@ async def update_trading_terms(
     terms_dict = body.model_dump(exclude_none=True)
     row = await sb.update_trading_terms(user_id, terms_dict)
     return TradingTermsResponse(trading_terms=row.get("trading_terms", terms_dict))
+
+
+
+# ---------- POST /api/v1/profile/apply-supplier ----------
+
+
+@router.post("/apply-supplier", summary="Apply to become a supplier")
+async def apply_to_become_supplier(
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Submit application to become a verified supplier.
+    Requires that the user's business profile is completely filled out.
+    """
+    user_row = await sb.fetch_user(user_id)
+    if user_row and user_row.get("role") == "supplier":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already a registered and verified supplier.",
+        )
+
+    biz_row = await sb.fetch_business(user_id)
+    if not biz_row:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Business profile not found. Please complete your business profile (legal name, phone number, address, and coordinates) before applying.",
+        )
+
+    missing = []
+    if not (biz_row.get("legal_name") or "").strip():
+        missing.append("legal_name")
+    if not (biz_row.get("phone_number") or "").strip():
+        missing.append("phone_number")
+    if not (biz_row.get("physical_address") or "").strip():
+        missing.append("physical_address")
+    if biz_row.get("latitude") is None or biz_row.get("longitude") is None:
+        missing.append("location coordinates (latitude/longitude)")
+
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Incomplete business profile. The following fields are required: {', '.join(missing)}.",
+        )
+
+    return {
+        "status": "pending_approval",
+        "message": "Your supplier application has been submitted successfully. An administrator will review your business profile and confirm your supplier status.",
+        "business": {
+            "legal_name": biz_row.get("legal_name"),
+            "phone_number": biz_row.get("phone_number"),
+            "physical_address": biz_row.get("physical_address"),
+            "city": biz_row.get("city"),
+        },
+    }

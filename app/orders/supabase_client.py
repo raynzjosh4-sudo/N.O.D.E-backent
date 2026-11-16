@@ -78,12 +78,12 @@ async def fetch_orders_for_user(
 
 async def fetch_order_by_id(order_id: str, user_id: str) -> Optional[dict]:
     """
-    Fetch a single order where order_id = param AND user_id = current_user.
-    Returns None if not found.
+    Fetch a single order where order_id = param AND (user_id = current_user OR supplier_id = current_user).
+    Returns None if not found or unauthorized.
     """
     params = {
         "order_id": f"eq.{order_id}",
-        "user_id": f"eq.{user_id}",
+        "or": f"(user_id.eq.{user_id},supplier_id.eq.{user_id})",
         "limit": 1,
     }
     async with httpx.AsyncClient() as client:

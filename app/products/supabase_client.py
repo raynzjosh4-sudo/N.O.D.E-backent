@@ -173,3 +173,42 @@ async def fetch_suppliers() -> list:
         )
         resp.raise_for_status()
     return resp.json()
+
+
+
+async def insert_product(product_data: dict) -> dict:
+    """Insert a new product record into products_table."""
+    headers = {**HEADERS, "Prefer": "return=representation"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(_url("products_table"), json=product_data, headers=headers)
+        resp.raise_for_status()
+        rows = resp.json()
+        return rows[0] if rows else product_data
+
+
+async def update_product(product_id: str, updates: dict) -> dict:
+    """Update fields on an existing product in products_table."""
+    headers = {**HEADERS, "Prefer": "return=representation"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.patch(
+            _url("products_table"),
+            params={"id": f"eq.{product_id}"},
+            json=updates,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        return rows[0] if rows else updates
+
+
+async def delete_product(product_id: str) -> bool:
+    """Delete a product from products_table."""
+    headers = {**HEADERS, "Prefer": "return=representation"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.delete(
+            _url("products_table"),
+            params={"id": f"eq.{product_id}"},
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return len(resp.json()) > 0
