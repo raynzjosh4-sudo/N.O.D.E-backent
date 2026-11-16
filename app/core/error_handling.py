@@ -2,6 +2,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
@@ -19,6 +20,7 @@ _ERROR_CODES = {
     409: "conflict",
     422: "invalid_request",
     429: "rate_limited",
+    500: "internal_error",
     502: "upstream_error",
     503: "service_unavailable",
     504: "upstream_timeout",
@@ -82,7 +84,7 @@ async def handle_validation_exception(
 ) -> JSONResponse:
     details = [
         {
-            "field": list(error["loc"]),
+            "field": ".".join(str(loc) for loc in error["loc"] if loc != "body"),
             "message": error["msg"],
             "type": error["type"],
         }
@@ -92,8 +94,25 @@ async def handle_validation_exception(
         request,
         status_code=422,
         code="invalid_request",
-        message="The request contains invalid fields.",
+        message="Validation failed for submitted data. Please verify required fields.",
         details=details,
+    )
+
+
+async def handle_httpx_exception(
+    request: Request,
+    exception: httpx.HTTPError,
+) -> JSONResponse:
+    request_id = _request_id(request)
+    logger.error(
+        f"Upstream database/network HTTP exception: {exception}",
+        extra={"request_id": request_id},
+    )
+    return _error_response(
+        request,
+        status_code=502,
+        code="upstream_error",
+        message="A communication error occurred with the backend database. Please retry shortly.",
     )
 
 
@@ -103,12 +122,12 @@ async def handle_unexpected_exception(
 ) -> JSONResponse:
     request_id = _request_id(request)
     logger.exception(
-        "Unhandled API exception",
+        f"Unhandled API exception: {exception}",
         extra={"request_id": request_id},
     )
     return _error_response(
         request,
         status_code=500,
         code="internal_error",
-        message="An unexpected error occurred. Please try again.",
+        message="An internal server error occurred. Please contact support or try again.",
     )

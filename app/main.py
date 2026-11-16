@@ -30,12 +30,14 @@ from app.core.config import (
 )
 from app.core.error_handling import (
     handle_http_exception,
+    handle_httpx_exception,
     handle_unexpected_exception,
     handle_validation_exception,
 )
 from app.core.http_client import lifespan_http_client
 from sqlalchemy import text
 from app.db.session import engine, init_db
+import httpx
 
 
 @asynccontextmanager
@@ -57,6 +59,7 @@ app = FastAPI(
 )
 app.add_exception_handler(StarletteHTTPException, handle_http_exception)
 app.add_exception_handler(RequestValidationError, handle_validation_exception)
+app.add_exception_handler(httpx.HTTPError, handle_httpx_exception)
 app.add_exception_handler(Exception, handle_unexpected_exception)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 app.add_middleware(
