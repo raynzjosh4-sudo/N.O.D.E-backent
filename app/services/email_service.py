@@ -1,9 +1,11 @@
 """
 Unified email delivery service for N.O.D.E. Wholesale Platform.
 Supports HTML emails and file attachments (e.g. Order PDF) via Resend API.
+Templates are stored cleanly in app/templates/.
 """
 import base64
 import logging
+from pathlib import Path
 from typing import Any, Optional
 import httpx
 
@@ -12,6 +14,22 @@ from app.notifications.supabase_client import register_device_token, _url, HEADE
 
 logger = logging.getLogger(__name__)
 RESEND_API_URL = "https://api.resend.com/emails"
+TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+
+
+def render_order_template(
+    template_name: str,
+    context: dict[str, str],
+) -> str:
+    """Load HTML template from app/templates and substitute {{KEY}} tags."""
+    template_path = TEMPLATES_DIR / template_name
+    if not template_path.exists():
+        raise FileNotFoundError(f"Email template not found: {template_path}")
+    
+    content = template_path.read_text(encoding="utf-8")
+    for key, val in context.items():
+        content = content.replace(f"{{{{{key}}}}}", str(val))
+    return content
 
 
 async def send_order_email(
@@ -112,87 +130,16 @@ def build_order_status_email_html(
     is_supplier: bool = False,
 ) -> str:
     """
-    Responsive HTML email template styled with N.O.D.E. executive branding.
+    Render order status update email from app/templates/order_status_update.html.
     """
     role_sub = "Supplier Copy" if is_supplier else "Merchant Copy"
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>N.O.D.E. Wholesale Order Update</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #0D0D1A; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #FFFFFF;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0D0D1A; padding: 40px 10px;">
-    <tr>
-      <td align="center">
-        <table width="600" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%; background-color: #141424; border-radius: 8px; border: 1px solid #27273A; overflow: hidden;">
-          
-          <!-- BRAND HEADER -->
-          <tr>
-            <td style="background-color: #0B0B14; padding: 25px 30px; border-bottom: 2px solid #00BFFF;">
-              <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <span style="font-size: 22px; font-weight: 800; letter-spacing: 5px; color: #FFFFFF;">N.O.D.E.</span><br/>
-                    <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: #71717A;">NATIONAL ORDER &amp; DISTRIBUTION EXCHANGE</span>
-                  </td>
-                  <td align="right">
-                    <span style="display: inline-block; padding: 4px 10px; border: 1px solid #00BFFF; border-radius: 2px; font-size: 9px; font-weight: 700; color: #00BFFF; letter-spacing: 1px;">{role_sub.upper()}</span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- BODY -->
-          <tr>
-            <td style="padding: 35px 30px;">
-              <p style="margin: 0 0 15px 0; font-size: 14px; color: #A1A1AA;">Hello <strong style="color: #FFFFFF;">{recipient_name}</strong>,</p>
-              
-              <div style="background-color: #1A1A2E; border-left: 4px solid {status_color}; padding: 18px 20px; border-radius: 4px; margin-bottom: 25px;">
-                <span style="font-size: 11px; font-weight: 700; color: #71717A; text-transform: uppercase; letter-spacing: 1px;">ORDER STATUS UPDATE</span>
-                <h2 style="margin: 6px 0 0 0; font-size: 18px; color: {status_color}; font-weight: 700;">{status_title}</h2>
-                <p style="margin: 8px 0 0 0; font-size: 13px; color: #D4D4D8; line-height: 1.5;">{message}</p>
-              </div>
-
-              <!-- ORDER SUMMARY CARD -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #10101C; border: 1px solid #27273A; border-radius: 6px; margin-bottom: 25px;">
-                <tr>
-                  <td style="padding: 16px 20px; border-bottom: 1px solid #27273A;">
-                    <span style="font-size: 11px; color: #71717A;">TOKEN / ORDER ID:</span><br/>
-                    <strong style="font-size: 13px; color: #00BFFF; font-family: monospace;">{order_id}</strong>
-                  </td>
-                  <td style="padding: 16px 20px; border-bottom: 1px solid #27273A;" align="right">
-                    <span style="font-size: 11px; color: #71717A;">ORDER VALUE:</span><br/>
-                    <strong style="font-size: 15px; color: #FFFFFF;">{order_total_ugx}</strong>
-                  </td>
-                </tr>
-                <tr>
-                  <td colspan="2" style="padding: 14px 20px;">
-                    <span style="font-size: 12px; color: #A1A1AA;">📎 The official <strong>N.O.D.E. Wholesale Spec Sheet &amp; Invoice PDF</strong> is attached to this email with QR clearance code for physical delivery.</span>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin: 0; font-size: 12px; color: #71717A; line-height: 1.5;">
-                You can also view this order and verify delivery anytime directly in the N.O.D.E. application.
-              </p>
-            </td>
-          </tr>
-
-          <!-- FOOTER -->
-          <tr>
-            <td style="background-color: #0B0B14; padding: 20px 30px; text-align: center; border-top: 1px solid #27273A;">
-              <p style="margin: 0; font-size: 11px; color: #71717A;">
-                N.O.D.E. Wholesale Platform &bull; Automated System Dispatch &bull; in association with NEXUS
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>"""
+    context = {
+        "RECIPIENT_NAME": recipient_name,
+        "ORDER_ID": order_id,
+        "STATUS_TITLE": status_title,
+        "STATUS_COLOR": status_color,
+        "MESSAGE": message,
+        "ORDER_TOTAL_UGX": order_total_ugx,
+        "ROLE_SUB": role_sub,
+    }
+    return render_order_template("order_status_update.html", context)

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>N.O.D.E. Wholesale Order Update</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0D0D1A; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #FFFFFF;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0D0D1A; padding: 40px 10px;">
+    <tr>
+      <td align="center">
+        <table width="600" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%; background-color: #141424; border-radius: 8px; border: 1px solid #27273A; overflow: hidden;">
+          
+          <!-- BRAND HEADER -->
+          <tr>
+            <td style="background-color: #0B0B14; padding: 25px 30px; border-bottom: 2px solid #00BFFF;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td>
+                    <span style="font-size: 22px; font-weight: 800; letter-spacing: 5px; color: #FFFFFF;">N.O.D.E.</span><br/>
+                    <span style="font-size: 8px; font-weight: 700; letter-spacing: 1.5px; color: #71717A;">NATIONAL ORDER &amp; DISTRIBUTION EXCHANGE</span>
+                  </td>
+                  <td align="right">
+                    <span style="display: inline-block; padding: 4px 10px; border: 1px solid #00BFFF; border-radius: 2px; font-size: 9px; font-weight: 700; color: #00BFFF; letter-spacing: 1px;">{{ROLE_SUB}}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BODY -->
+          <tr>
+            <td style="padding: 35px 30px;">
+              <p style="margin: 0 0 15px 0; font-size: 14px; color: #A1A1AA;">Hello <strong style="color: #FFFFFF;">{{RECIPIENT_NAME}}</strong>,</p>
+              
+              <div style="background-color: #1A1A2E; border-left: 4px solid {{STATUS_COLOR}}; padding: 18px 20px; border-radius: 4px; margin-bottom: 25px;">
+                <span style="font-size: 11px; font-weight: 700; color: #71717A; text-transform: uppercase; letter-spacing: 1px;">ORDER STATUS UPDATE</span>
+                <h2 style="margin: 6px 0 0 0; font-size: 18px; color: {{STATUS_COLOR}}; font-weight: 700;">{{STATUS_TITLE}}</h2>
+                <p style="margin: 8px 0 0 0; font-size: 13px; color: #D4D4D8; line-height: 1.5;">{{MESSAGE}}</p>
+              </div>
+
+              <!-- ORDER SUMMARY CARD -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #10101C; border: 1px solid #27273A; border-radius: 6px; margin-bottom: 25px;">
+                <tr>
+                  <td style="padding: 16px 20px; border-bottom: 1px solid #27273A;">
+                    <span style="font-size: 11px; color: #71717A;">TOKEN / ORDER ID:</span><br/>
+                    <strong style="font-size: 13px; color: #00BFFF; font-family: monospace;">{{ORDER_ID}}</strong>
+                  </td>
+                  <td style="padding: 16px 20px; border-bottom: 1px solid #27273A;" align="right">
+                    <span style="font-size: 11px; color: #71717A;">ORDER VALUE:</span><br/>
+                    <strong style="font-size: 15px; color: #FFFFFF;">{{ORDER_TOTAL_UGX}}</strong>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding: 14px 20px;">
+                    <span style="font-size: 12px; color: #A1A1AA;">📎 The official <strong>N.O.D.E. Wholesale Spec Sheet &amp; Invoice PDF</strong> is attached to this email with QR clearance code for physical delivery.</span>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; font-size: 12px; color: #71717A; line-height: 1.5;">
+                You can also view this order and verify delivery anytime directly in the N.O.D.E. application.
+              </p>
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="background-color: #0B0B14; padding: 20px 30px; text-align: center; border-top: 1px solid #27273A;">
+              <p style="margin: 0; font-size: 11px; color: #71717A;">
+                N.O.D.E. Wholesale Platform &bull; Automated System Dispatch &bull; in association with NEXUS
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
