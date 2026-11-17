@@ -53,3 +53,5 @@ scratch/
 
 app/static/
 src/Emailimages/
+app/templates/preview_*.html
+

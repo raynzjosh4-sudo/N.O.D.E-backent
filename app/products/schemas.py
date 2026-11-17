@@ -118,7 +118,8 @@ class ProductCreateRequest(BaseModel):
     srp: float
     category_id: str
     supplier_id: str
-    image_url: str
+    image_url: Optional[str] = ""
+    image_base64: Optional[str] = None
     slug: Optional[str] = None
     media_urls: List[str] = []
     aspect_ratio: float = 1.0
@@ -153,6 +154,7 @@ class ProductUpdateRequest(BaseModel):
     category_id: Optional[str] = None
     supplier_id: Optional[str] = None
     image_url: Optional[str] = None
+    image_base64: Optional[str] = None
     media_urls: Optional[List[str]] = None
     aspect_ratio: Optional[float] = None
     price_tiers: Optional[List[PriceTier]] = None

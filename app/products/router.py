@@ -10,9 +10,10 @@ GET /api/v1/products/suppliers         → all supplier users
 import re
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.core.deps import require_supplier_or_admin
+from app.services.cloud_media_service import decode_base64_image, upload_to_cloudflare
 from app.products.supabase_client import (
     fetch_products,
     fetch_product_by_id,
@@ -288,6 +289,24 @@ async def create_new_product(
         slug = f"{slug}-{uuid.uuid4().hex[:6]}"
 
     product_id = str(uuid.uuid4())
+
+    # Handle image upload to Cloudflare if base64 data provided
+    image_url = payload.image_url or ""
+    media_urls = list(payload.media_urls or [])
+    if payload.image_base64:
+        file_bytes, filename, content_type = decode_base64_image(payload.image_base64)
+        uploaded_url = await upload_to_cloudflare(
+            file_bytes=file_bytes,
+            filename=filename,
+            content_type=content_type,
+            folder="products",
+        )
+        image_url = uploaded_url
+        if uploaded_url not in media_urls:
+            media_urls.insert(0, uploaded_url)
+    elif image_url and not media_urls:
+        media_urls = [image_url]
+
     product_data = {
         "id": product_id,
         "sku": payload.sku,
@@ -297,8 +316,8 @@ async def create_new_product(
         "srp": payload.srp,
         "category_id": payload.category_id,
         "supplier_id": supplier_id,
-        "image_url": payload.image_url,
-        "media_urls": payload.media_urls or [payload.image_url],
+        "image_url": image_url,
+        "media_urls": media_urls,
         "aspect_ratio": payload.aspect_ratio,
         "price_tiers": [t.model_dump() for t in payload.price_tiers],
         "hs_code": payload.hs_code or "",
@@ -350,6 +369,24 @@ async def update_existing_product(
         )
 
     updates = payload.model_dump(exclude_none=True)
+
+    # Handle image upload to Cloudflare if base64 data provided
+    if updates.get("image_base64"):
+        file_bytes, filename, content_type = decode_base64_image(updates.pop("image_base64"))
+        uploaded_url = await upload_to_cloudflare(
+            file_bytes=file_bytes,
+            filename=filename,
+            content_type=content_type,
+            folder="products",
+        )
+        updates["image_url"] = uploaded_url
+        current_media = list(updates.get("media_urls") or existing.get("media_urls") or [])
+        if uploaded_url not in current_media:
+            current_media.insert(0, uploaded_url)
+        updates["media_urls"] = current_media
+    elif "image_base64" in updates:
+        updates.pop("image_base64", None)
+
     if "price_tiers" in updates:
         updates["price_tiers"] = [t.model_dump() if hasattr(t, "model_dump") else t for t in payload.price_tiers or []]
     if "available_colors" in updates:
@@ -368,6 +405,80 @@ async def update_existing_product(
 
     refreshed = await fetch_product_by_id(product_id)
     return _build_product_response(refreshed or existing)
+
+
+@router.post("/{product_id}/image", response_model=ProductResponse, summary="Upload image file to Cloudflare and update product")
+@router.put("/{product_id}/image", response_model=ProductResponse, summary="Upload image file to Cloudflare and update product")
+async def upload_product_image_file(
+    product_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_supplier_or_admin),
+):
+    """
+    Receives an image file from the user (multipart/form-data), uploads it to Cloudflare R2,
+    and updates the product's image_url and media_urls in Supabase DB.
+    """
+    existing = await fetch_product_by_id(product_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Product '{product_id}' not found")
+
+    caller_role = (current_user.get("role") or "").lower()
+    if caller_role != "admin" and existing.get("supplier_id") != current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You are only permitted to edit your own posted products.",
+        )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+
+    # 1. Upload to Cloudflare R2
+    uploaded_url = await upload_to_cloudflare(
+        file_bytes=file_bytes,
+        filename=file.filename or f"{product_id}.jpg",
+        content_type=file.content_type or "image/jpeg",
+        folder="products",
+    )
+
+    # 2. Update image_url and media_urls in DB
+    current_media = list(existing.get("media_urls") or [])
+    if uploaded_url not in current_media:
+        current_media.insert(0, uploaded_url)
+
+    updates = {
+        "image_url": uploaded_url,
+        "media_urls": current_media,
+    }
+    await update_product(product_id, updates)
+
+    refreshed = await fetch_product_by_id(product_id)
+    return _build_product_response(refreshed or existing)
+
+
+@router.post("/upload-image", summary="Upload general image to Cloudflare R2")
+async def upload_general_image(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_supplier_or_admin),
+):
+    """
+    Standalone upload: uploads an image file to Cloudflare R2 and returns its public CDN URL.
+    """
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+
+    uploaded_url = await upload_to_cloudflare(
+        file_bytes=file_bytes,
+        filename=file.filename or "image.jpg",
+        content_type=file.content_type or "image/jpeg",
+        folder="products",
+    )
+    return {
+        "url": uploaded_url,
+        "filename": file.filename,
+        "content_type": file.content_type,
+    }
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a product")
