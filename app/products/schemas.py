@@ -111,12 +111,21 @@ class PaginatedProducts(BaseModel):
     has_more: bool
 
 
+class CategoryCreatePayload(BaseModel):
+    name: str
+    parent_id: Optional[str] = None
+    level: int = 0
+    image_url: Optional[str] = None
+    image_base64: Optional[str] = None
+
+
 class ProductCreateRequest(BaseModel):
     sku: str
     name: str
     brand: str
     srp: float
-    category_id: str
+    category_id: Optional[str] = None
+    new_category: Optional[CategoryCreatePayload] = None
     supplier_id: str
     image_url: Optional[str] = ""
     image_base64: Optional[str] = None
@@ -152,6 +161,7 @@ class ProductUpdateRequest(BaseModel):
     slug: Optional[str] = None
     srp: Optional[float] = None
     category_id: Optional[str] = None
+    new_category: Optional[CategoryCreatePayload] = None
     supplier_id: Optional[str] = None
     image_url: Optional[str] = None
     image_base64: Optional[str] = None

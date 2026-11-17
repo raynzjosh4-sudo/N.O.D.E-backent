@@ -23,8 +23,10 @@ from app.products.supabase_client import (
     insert_product,
     update_product,
     delete_product,
+    insert_category,
 )
 from app.products.schemas import (
+    CategoryCreatePayload,
     PaginatedProducts,
     ProductListItem,
     ProductResponse,
@@ -225,6 +227,64 @@ async def list_categories():
     return await fetch_categories()
 
 
+@router.post("/categories", status_code=status.HTTP_201_CREATED, summary="Create a category or subcategory with Cloudflare image")
+async def create_product_category(
+    payload: CategoryCreatePayload,
+    current_user: dict = Depends(require_supplier_or_admin),
+):
+    """
+    Create a new category or subcategory.
+    If image_base64 is provided, uploads it to Cloudflare R2 (folder='categories').
+    - For root categories: level=0, parent_id=None
+    - For subcategories: level=1 (or higher), parent_id set to parent's category ID.
+    """
+    image_url = payload.image_url or ""
+    if payload.image_base64:
+        file_bytes, filename, content_type = decode_base64_image(payload.image_base64)
+        image_url = await upload_to_cloudflare(
+            file_bytes=file_bytes,
+            filename=filename,
+            content_type=content_type,
+            folder="categories",
+        )
+
+    return await insert_category(
+        name=payload.name,
+        parent_id=payload.parent_id,
+        image_url=image_url,
+        level=payload.level,
+    )
+
+
+async def _resolve_category_id(
+    category_id: Optional[str],
+    new_category: Optional[CategoryCreatePayload],
+) -> str:
+    """
+    Resolves category ID: if new_category is provided, creates the category/subcategory
+    (with Cloudflare R2 image upload) and returns its generated category ID.
+    """
+    if new_category:
+        cat_image_url = new_category.image_url or ""
+        if new_category.image_base64:
+            file_bytes, filename, content_type = decode_base64_image(new_category.image_base64)
+            cat_image_url = await upload_to_cloudflare(
+                file_bytes=file_bytes,
+                filename=filename,
+                content_type=content_type,
+                folder="categories",
+            )
+        created_cat = await insert_category(
+            name=new_category.name,
+            parent_id=new_category.parent_id,
+            image_url=cat_image_url,
+            level=new_category.level,
+        )
+        return created_cat.get("id", category_id or "cat_1")
+    return category_id or "cat_1"
+
+
+
 @router.get("/suppliers", summary="List all suppliers")
 async def list_suppliers():
     return await fetch_suppliers()
@@ -307,6 +367,9 @@ async def create_new_product(
     elif image_url and not media_urls:
         media_urls = [image_url]
 
+    # Resolve or create category (with Cloudflare image if new)
+    category_id = await _resolve_category_id(payload.category_id, payload.new_category)
+
     product_data = {
         "id": product_id,
         "sku": payload.sku,
@@ -314,7 +377,7 @@ async def create_new_product(
         "brand": payload.brand,
         "slug": slug,
         "srp": payload.srp,
-        "category_id": payload.category_id,
+        "category_id": category_id,
         "supplier_id": supplier_id,
         "image_url": image_url,
         "media_urls": media_urls,
@@ -369,6 +432,13 @@ async def update_existing_product(
         )
 
     updates = payload.model_dump(exclude_none=True)
+
+    # Resolve or create category if new_category provided
+    if "new_category" in updates:
+        new_cat_data = updates.pop("new_category")
+        if new_cat_data:
+            cat_payload = CategoryCreatePayload(**new_cat_data) if isinstance(new_cat_data, dict) else new_cat_data
+            updates["category_id"] = await _resolve_category_id(updates.get("category_id"), cat_payload)
 
     # Handle image upload to Cloudflare if base64 data provided
     if updates.get("image_base64"):

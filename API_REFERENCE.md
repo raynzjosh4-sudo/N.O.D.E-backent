@@ -273,7 +273,39 @@ List all products (paginated). Public — no auth required.
 ### `GET /api/v1/products/categories`
 List all product categories. Public.
 
-**Response `200`:** `[ { "id": "...", "name": "...", "parent_id": null, "level": 0 } ]`
+**Response `200`:** `[ { "id": "cat_1a2b3c", "name": "Textiles", "parent_id": null, "level": 0, "image_url": "https://..." } ]`
+
+---
+
+### `POST /api/v1/products/categories` 🔐 *(Supplier/Admin)*
+Create a new category or subcategory with an optional image uploaded to Cloudflare R2.
+
+**Request body:**
+```json
+{
+  "name": "Cotton Fabrics",
+  "parent_id": "cat_textiles",
+  "level": 1,
+  "image_base64": "data:image/png;base64,iVBORw0KGgo...",
+  "image_url": "https://..."
+}
+```
+- **Root Category:** `parent_id: null`, `level: 0`
+- **Subcategory:** `parent_id: "cat_parent_id"`, `level: 1`
+- **Image upload:** Pass `image_base64` and the backend will automatically upload it to **Cloudflare R2** under `categories/` and set `image_url`!
+
+**Response `201`:**
+```json
+{
+  "id": "cat_7f8a9b1c",
+  "name": "Cotton Fabrics",
+  "parent_id": "cat_textiles",
+  "image_url": "https://nodemediafiles.crimchart.com/...",
+  "level": 1,
+  "item_count": 0
+}
+```
+
 
 ---
 
@@ -321,8 +353,14 @@ Publish a new product to the catalog.
   "name": "Cotton Shirt",
   "brand": "BrandCo",
   "image_url": "https://...",
-  "media_urls": ["https://...", "https://..."],
-  "category_id": "uuid",
+  "image_base64": "data:image/png;base64,...",
+  "category_id": "cat_textiles",
+  "new_category": {
+    "name": "Organic Cotton Yarns",
+    "parent_id": "cat_textiles",
+    "level": 1,
+    "image_base64": "data:image/png;base64,..."
+  },
   "srp": 25000,
   "price_tiers": [
     { "minQuantity": 1, "price": 25000, "label": "Retail" },
@@ -342,6 +380,8 @@ Publish a new product to the catalog.
   "trading_terms": { "moq": "50 units", "paymentTerms": "50% upfront", "deliveryTerms": "CIF" }
 }
 ```
+> **Inline Category & Subcategory Creation:** If `new_category` is provided, the backend automatically creates the new category or subcategory in `categories_table`, uploads its image to Cloudflare R2, and links it to this product!
+
 **Response `201`:** Full `ProductResponse`
 
 > [!NOTE]

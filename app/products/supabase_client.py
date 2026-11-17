@@ -212,3 +212,29 @@ async def delete_product(product_id: str) -> bool:
         )
         resp.raise_for_status()
         return len(resp.json()) > 0
+
+
+async def insert_category(
+    name: str,
+    parent_id: Optional[str] = None,
+    image_url: Optional[str] = None,
+    level: int = 0,
+) -> dict:
+    """Insert a new category/subcategory row in categories_table matching Flutter."""
+    import uuid
+    category_id = f"cat_{uuid.uuid4().hex[:8]}"
+    payload = {
+        "id": category_id,
+        "name": name,
+        "parent_id": parent_id,
+        "image_url": image_url,
+        "level": level,
+        "item_count": 0,
+    }
+    headers = {**HEADERS, "Prefer": "return=representation"}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(_url("categories_table"), json=payload, headers=headers)
+        resp.raise_for_status()
+        rows = resp.json()
+        return rows[0] if rows else payload
+
