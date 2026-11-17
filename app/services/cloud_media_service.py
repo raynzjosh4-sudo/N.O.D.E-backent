@@ -13,15 +13,18 @@ from typing import Optional, Tuple
 import httpx
 from fastapi import HTTPException, status
 
-from app.core.config import supabase_anon_key, supabase_url, is_production
-
-DEFAULT_R2_PUBLIC_URL = "https://nodemediafiles.crimchart.com"
+from app.core.config import (
+    cloudflare_media_endpoint,
+    r2_public_url,
+    supabase_anon_key,
+    supabase_url,
+    is_production,
+)
 
 
 def get_cloudflare_media_url() -> str:
     """Returns the Cloudflare R2 worker upload endpoint."""
-    base = os.getenv("R2_PUBLIC_URL", os.getenv("CLOUDFLARE_R2_URL", DEFAULT_R2_PUBLIC_URL)).rstrip("/")
-    return f"{base}/_node/media"
+    return cloudflare_media_endpoint()
 
 
 def decode_base64_image(data_str: str) -> Tuple[bytes, str, str]:

@@ -30,5 +30,9 @@ services:
         sync: false          # Supabase anon/public key
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false          # Supabase service-role key (kept secret)
+      - key: R2_PUBLIC_URL
+        value: https://nodemediafiles.crimchart.com
+      - key: CLOUDFLARE_MEDIA_ENDPOINT
+        value: https://nodemediafiles.crimchart.com/_node/media
       - key: DATABASE_URL
         sync: false          # Optional: Postgres URL if you migrate off SQLite

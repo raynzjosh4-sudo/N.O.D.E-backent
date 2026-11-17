@@ -82,3 +82,14 @@ def supabase_anon_key() -> str:
         "SUPABASE_ANON_KEY",
         "sb_publishable_xknRF_gqAzQqznqNvSONRg_j6GkQdrS",
     ).strip()
+
+
+def r2_public_url() -> str:
+    """Cloudflare R2 public base CDN URL from Flutter project."""
+    return os.getenv("R2_PUBLIC_URL", "https://nodemediafiles.crimchart.com").rstrip("/")
+
+
+def cloudflare_media_endpoint() -> str:
+    """Cloudflare media upload worker endpoint."""
+    return os.getenv("CLOUDFLARE_MEDIA_ENDPOINT", f"{r2_public_url()}/_node/media").strip()
+
