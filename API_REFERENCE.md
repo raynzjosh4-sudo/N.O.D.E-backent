@@ -270,6 +270,20 @@ List all products (paginated). Public — no auth required.
 
 ---
 
+### `GET /api/v1/products/popular`
+Get popular and trending products for the home screen explore section (matching Flutter's `popularProductsProvider` and `PopularSection`). Public.
+
+**Query params:**
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `category_id` | UUID | — | Optional category filter when user taps category chips |
+| `limit` | int | 15 | Number of products to return (default 15) |
+| `offset` | int | 0 | Offset for pagination |
+
+**Response `200`:** `list[ProductResponse]` with full pricing tiers and enriched supplier details.
+
+---
+
 ### `GET /api/v1/products/categories`
 List all product categories. Public.
 
@@ -278,7 +292,7 @@ List all product categories. Public.
 ---
 
 ### `POST /api/v1/products/categories` 🔐 *(Supplier/Admin)*
-Create a new category or subcategory with an optional image uploaded to Cloudflare R2.
+Create a new category or subcategory with an optional image uploaded to Cloudflare R2 via JSON.
 
 **Request body:**
 ```json
@@ -305,6 +319,43 @@ Create a new category or subcategory with an optional image uploaded to Cloudfla
   "item_count": 0
 }
 ```
+
+---
+
+### `POST /api/v1/products/categories/with-image` 🔐 *(Supplier/Admin)*
+Create a new category or subcategory with a direct multipart image file upload (matching Flutter's `AdminCreateCategoryPage`).
+
+**Content-Type:** `multipart/form-data`  
+**Form fields:**
+- `name` (string, required): Category or subcategory name
+- `parent_id` (string, optional): Parent category ID (omit for root level)
+- `level` (int, default 0): Hierarchy level (`0` for root, `1` for subcategory)
+- `file` (binary file, optional): Category cover image from gallery/camera
+
+**What the backend does:**
+1. Uploads the image file directly to **Cloudflare R2** under `categories/`.
+2. Stores the public CDN URL in `categories_table`.
+3. Returns the newly created category with its `id` (`cat_xxxxxxxx`).
+
+**Response `201`:** Category object with `id`, `name`, `parent_id`, `image_url`, `level`.
+
+---
+
+### `POST /api/v1/products/categories/{category_id}/image` & `PUT /api/v1/products/categories/{category_id}/image` 🔐 *(Supplier/Admin)*
+Upload or replace the cover image for an existing category or subcategory.
+
+**Content-Type:** `multipart/form-data`  
+**Body:** Form field `file` (image file)
+
+**Response `200`:**
+```json
+{
+  "id": "cat_7f8a9b1c",
+  "image_url": "https://nodemediafiles.crimchart.com/...",
+  "category": { "id": "cat_7f8a9b1c", "name": "Cotton Fabrics", "image_url": "..." }
+}
+```
+
 
 
 ---

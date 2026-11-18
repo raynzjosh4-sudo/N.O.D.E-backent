@@ -10,7 +10,7 @@ GET /api/v1/products/suppliers         → all supplier users
 import re
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.core.deps import require_supplier_or_admin
 from app.services.cloud_media_service import decode_base64_image, upload_to_cloudflare
@@ -24,6 +24,8 @@ from app.products.supabase_client import (
     update_product,
     delete_product,
     insert_category,
+    update_category,
+    fetch_popular_products,
 )
 from app.products.schemas import (
     CategoryCreatePayload,
@@ -256,6 +258,68 @@ async def create_product_category(
     )
 
 
+@router.post("/categories/with-image", status_code=status.HTTP_201_CREATED, summary="Create category/subcategory with direct image file upload")
+async def create_category_with_image(
+    name: str = Form(..., description="Category name"),
+    parent_id: Optional[str] = Form(None, description="Parent category ID (omit for root level)"),
+    level: int = Form(0, description="Hierarchy level: 0 for root, 1 for subcategory"),
+    file: Optional[UploadFile] = File(None, description="Category cover image file"),
+    current_user: dict = Depends(require_supplier_or_admin),
+):
+    """
+    Create a new category or subcategory with a direct multipart image file upload.
+    Uploads the file directly to Cloudflare R2 (folder='categories') and stores the public CDN URL.
+    """
+    image_url = ""
+    if file:
+        file_bytes = await file.read()
+        if file_bytes:
+            image_url = await upload_to_cloudflare(
+                file_bytes=file_bytes,
+                filename=file.filename or f"cat_{name}.jpg",
+                content_type=file.content_type or "image/jpeg",
+                folder="categories",
+            )
+
+    return await insert_category(
+        name=name.strip(),
+        parent_id=parent_id.strip() if parent_id else None,
+        image_url=image_url,
+        level=level,
+    )
+
+
+@router.post("/categories/{category_id}/image", summary="Upload/Update category cover image")
+@router.put("/categories/{category_id}/image", summary="Upload/Update category cover image")
+async def upload_category_image(
+    category_id: str,
+    file: UploadFile = File(..., description="Image file to set as category cover"),
+    current_user: dict = Depends(require_supplier_or_admin),
+):
+    """
+    Upload or replace the cover image for an existing category or subcategory.
+    Uploads directly to Cloudflare R2 and updates image_url in categories_table.
+    """
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+
+    uploaded_url = await upload_to_cloudflare(
+        file_bytes=file_bytes,
+        filename=file.filename or f"{category_id}.jpg",
+        content_type=file.content_type or "image/jpeg",
+        folder="categories",
+    )
+
+    updated = await update_category(category_id, {"image_url": uploaded_url})
+    return {
+        "id": category_id,
+        "image_url": uploaded_url,
+        "category": updated,
+    }
+
+
+
 async def _resolve_category_id(
     category_id: Optional[str],
     new_category: Optional[CategoryCreatePayload],
@@ -288,6 +352,25 @@ async def _resolve_category_id(
 @router.get("/suppliers", summary="List all suppliers")
 async def list_suppliers():
     return await fetch_suppliers()
+
+
+@router.get("/popular", response_model=list[ProductResponse], summary="Get popular products for home screen explore section")
+async def get_popular_products(
+    category_id: Optional[str] = Query(None, description="Optional category UUID to filter by"),
+    limit: int = Query(15, ge=1, le=50, description="Number of products to return (default 15)"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+):
+    """
+    Returns popular and trending products for the home screen explore section.
+    Directly feeds Flutter's popularProductsProvider and PopularSection widget.
+    """
+    rows = await fetch_popular_products(
+        category_id=category_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [_build_product_response(r) for r in rows]
+
 
 
 @router.get("/slug/{slug}", response_model=ProductResponse, summary="Get product by slug")
