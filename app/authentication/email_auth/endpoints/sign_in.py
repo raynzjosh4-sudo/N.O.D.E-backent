@@ -8,6 +8,7 @@ from app.authentication.email_auth.models.email_password import EmailPasswordReq
 from app.core.security import create_access_token, verify_password
 from app.db.models import User
 from app.db.session import get_db
+from app.profile import supabase_client as sb
 
 router = APIRouter()
 
@@ -40,15 +41,28 @@ async def sign_in(
             detail="User account is deactivated.",
         )
 
+    # Fetch / provision unified Supabase user row for role and Supabase ID
+    sb_user = await sb.ensure_user_exists(user.id, email=user.email)
+    effective_id = sb_user.get("id") or user.id
+    effective_role = sb_user.get("role") or "customer"
+    effective_name = sb_user.get("full_name") or user.email.split("@")[0]
+    effective_pic = sb_user.get("profile_pic_url")
+
     access_token = create_access_token(
-        data={"sub": user.id, "email": user.email}
+        data={"sub": effective_id, "email": user.email, "role": effective_role}
     )
+
+    user_dict = user.to_dict()
+    user_dict["id"] = effective_id
+    user_dict["role"] = effective_role
+    user_dict["full_name"] = effective_name
+    user_dict["profile_pic_url"] = effective_pic
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
             "access_token": access_token,
             "token_type": "bearer",
-            "user": user.to_dict(),
+            "user": user_dict,
         },
     )

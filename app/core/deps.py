@@ -32,11 +32,20 @@ async def get_current_user_id(
 
 
 async def get_current_user(
-    user_id: str = Depends(get_current_user_id),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict[str, Any]:
-    """Fetch user profile and role from users_table with resilient error handling."""
+    """Fetch user profile and role from users_table with resilient ID & email resolution."""
+    payload = decode_access_token(credentials.credentials)
+    user_id = payload.get("sub")
+    email = payload.get("email")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing authentication credentials",
+        )
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
+            # 1. Direct ID lookup
             resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/users_table",
                 params={"id": f"eq.{user_id}", "limit": "1"},
@@ -46,15 +55,21 @@ async def get_current_user(
                 rows = resp.json()
                 if rows:
                     return rows[0]
-                # Default role for existing auth user without profile row yet
-                return {"id": user_id, "role": "customer"}
-            elif resp.status_code == 404:
-                return {"id": user_id, "role": "customer"}
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Failed to retrieve user privileges from authentication service.",
+
+            # 2. Resilient email lookup fallback (matches user across auth providers)
+            if email:
+                resp_email = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/users_table",
+                    params={"email": f"eq.{email.strip().lower()}", "limit": "1"},
+                    headers=HEADERS,
                 )
+                if resp_email.status_code == 200:
+                    rows_email = resp_email.json()
+                    if rows_email:
+                        return rows_email[0]
+
+            # 3. Default customer role if brand new user without role row
+            return {"id": user_id, "email": email or "", "role": "customer"}
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

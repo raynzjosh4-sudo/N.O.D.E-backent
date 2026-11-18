@@ -108,6 +108,19 @@ async def handle_httpx_exception(
         f"Upstream database/network HTTP exception: {exception}",
         extra={"request_id": request_id},
     )
+    if isinstance(exception, httpx.HTTPStatusError):
+        status_code = exception.response.status_code
+        try:
+            err_data = exception.response.json()
+            err_msg = err_data.get("message") or err_data.get("hint") or str(exception)
+        except Exception:
+            err_msg = exception.response.text or str(exception)
+        return _error_response(
+            request,
+            status_code=status_code if 400 <= status_code < 500 else 502,
+            code="upstream_status_error",
+            message=err_msg,
+        )
     return _error_response(
         request,
         status_code=502,
