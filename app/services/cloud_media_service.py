@@ -4,6 +4,7 @@ Handles uploading product images and assets to Cloudflare R2 / media CDN,
 matching the Flutter CloudMediaService integration.
 """
 import base64
+import io
 import os
 import re
 import time
@@ -14,6 +15,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import (
+    backend_base_url,
     cloudflare_media_endpoint,
     r2_public_url,
     supabase_anon_key,
@@ -25,6 +27,46 @@ from app.core.config import (
 def get_cloudflare_media_url() -> str:
     """Returns the Cloudflare R2 worker upload endpoint."""
     return cloudflare_media_endpoint()
+
+
+def compress_image(
+    file_bytes: bytes,
+    max_dim: int = 1400,
+    quality: int = 82,
+    content_type: str = "image/jpeg",
+) -> Tuple[bytes, str]:
+    """
+    Compress / resize an image using Pillow.
+    - Applies EXIF auto-rotation so mobile photos appear upright.
+    - Scales down images whose longest dimension exceeds max_dim (default 1400 px).
+    - Saves as JPEG at the given quality (default 82).
+    Returns: (compressed_bytes, new_content_type)
+    """
+    try:
+        from PIL import Image, ImageOps  # type: ignore
+
+        img = Image.open(io.BytesIO(file_bytes))
+
+        # Auto-rotate based on EXIF orientation tag (mobile cameras)
+        img = ImageOps.exif_transpose(img)
+
+        # Downscale if necessary (keeps aspect ratio)
+        w, h = img.size
+        if max(w, h) > max_dim:
+            scale = max_dim / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+
+        # Convert modes incompatible with JPEG to RGB
+        if img.mode in ("RGBA", "P", "LA", "L"):
+            img = img.convert("RGB")
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+    except Exception as exc:
+        # If Pillow fails for any reason, return the original bytes untouched
+        print(f"⚠️ [CloudMediaService] Image compression skipped: {exc}")
+        return file_bytes, content_type
 
 
 def decode_base64_image(data_str: str) -> Tuple[bytes, str, str]:
@@ -72,11 +114,19 @@ async def upload_to_cloudflare(
     token: Optional[str] = None,
 ) -> str:
     """
-    Uploads raw image bytes to Cloudflare R2 via its _node/media worker endpoint.
-    If Cloudflare fails (e.g. invalid external credentials in dev/offline), falls back
-    to Supabase Storage or local static storage so catalog operations never fail.
+    Compresses the image, then uploads to Cloudflare R2 via its _node/media worker.
+    Falls back to Supabase Storage and then local static storage on failure.
+    Always returns an absolute HTTP URL.
     """
+    # --- Compress before upload (skip SVG/GIF) ---
+    if content_type not in ("image/svg+xml", "image/gif"):
+        file_bytes, content_type = compress_image(file_bytes, content_type=content_type)
+        # Update filename extension to .jpg after compression
+        stem = Path(filename).stem
+        filename = f"{stem}.jpg"
+
     endpoint = get_cloudflare_media_url()
+    # Prefer the user's own session token; anon key causes 401 on the Cloudflare worker
     auth_token = token or supabase_anon_key()
 
     headers = {
@@ -114,12 +164,13 @@ async def upload_to_cloudflare(
         except Exception as sb_exc:
             print(f"⚠️ [CloudMediaService] Supabase storage upload attempt failed: {sb_exc}")
 
-    # Fallback 2: Local static storage (for development/testing or when cloud is unreachable)
+    # Fallback 2: Local static storage — always return an ABSOLUTE URL
     static_upload_dir = Path(__file__).resolve().parent.parent / "static" / "uploads" / folder
     static_upload_dir.mkdir(parents=True, exist_ok=True)
     safe_local_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{Path(filename).name}"
     local_file_path = static_upload_dir / safe_local_name
     local_file_path.write_bytes(file_bytes)
 
-    # Return local accessible URL
-    return f"/static/uploads/{folder}/{safe_local_name}"
+    # Build absolute URL so mobile / web clients can load it without knowing the host
+    base = backend_base_url()
+    return f"{base}/static/uploads/{folder}/{safe_local_name}"

@@ -2,7 +2,7 @@
 Category & Subcategory management endpoints for products.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from app.core.deps import require_supplier_or_admin
 from app.products.schemas import CategoryCreatePayload
 from app.products.supabase_client import (
@@ -15,6 +15,13 @@ from app.services.cloud_media_service import decode_base64_image, upload_to_clou
 router = APIRouter()
 
 
+def _extract_token(request: Request) -> str | None:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return None
+
+
 @router.get("/categories", summary="List all categories")
 async def list_categories():
     return await fetch_categories()
@@ -22,6 +29,7 @@ async def list_categories():
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED, summary="Create a category or subcategory with Cloudflare image")
 async def create_product_category(
+    request: Request,
     payload: CategoryCreatePayload,
     current_user: dict = Depends(require_supplier_or_admin),
 ):
@@ -39,6 +47,7 @@ async def create_product_category(
             filename=filename,
             content_type=content_type,
             folder="categories",
+            token=_extract_token(request),
         )
 
     return await insert_category(
@@ -51,6 +60,7 @@ async def create_product_category(
 
 @router.post("/categories/with-image", status_code=status.HTTP_201_CREATED, summary="Create category/subcategory with direct image file upload")
 async def create_category_with_image(
+    request: Request,
     name: str = Form(..., description="Category name"),
     parent_id: Optional[str] = Form(None, description="Parent category ID (omit for root level)"),
     level: int = Form(0, description="Hierarchy level: 0 for root, 1 for subcategory"),
@@ -70,6 +80,7 @@ async def create_category_with_image(
                 filename=file.filename or f"cat_{name}.jpg",
                 content_type=file.content_type or "image/jpeg",
                 folder="categories",
+                token=_extract_token(request),
             )
 
     return await insert_category(
@@ -84,6 +95,7 @@ async def create_category_with_image(
 @router.put("/categories/{category_id}/image", summary="Upload/Update category cover image")
 async def upload_category_image(
     category_id: str,
+    request: Request,
     file: UploadFile = File(..., description="Image file to set as category cover"),
     current_user: dict = Depends(require_supplier_or_admin),
 ):
@@ -100,6 +112,7 @@ async def upload_category_image(
         filename=file.filename or f"{category_id}.jpg",
         content_type=file.content_type or "image/jpeg",
         folder="categories",
+        token=_extract_token(request),
     )
 
     updated = await update_category(category_id, {"image_url": uploaded_url})

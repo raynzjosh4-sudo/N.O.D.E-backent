@@ -124,3 +124,10 @@ def cloudflare_media_endpoint() -> str:
     """Cloudflare media upload worker endpoint."""
     return os.getenv("CLOUDFLARE_MEDIA_ENDPOINT", f"{r2_public_url()}/_node/media").strip()
 
+
+def backend_base_url() -> str:
+    """Public base URL for this backend service (used to build absolute static-file URLs)."""
+    return os.getenv(
+        "BACKEND_BASE_URL", "https://n-o-d-e-backent.onrender.com"
+    ).rstrip("/")
+

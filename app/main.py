@@ -79,10 +79,11 @@ app.include_router(notifications_router)
 app.include_router(promotions_router)
 app.include_router(admin_router)
 
-# Mount static files for email images and assets
+# Mount static files for email images, assets, and local image uploads
 static_path = Path(__file__).parent / "static"
-if static_path.exists():
-    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+static_path.mkdir(parents=True, exist_ok=True)  # ensure it always exists
+(static_path / "uploads").mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 
 @app.middleware("http")
