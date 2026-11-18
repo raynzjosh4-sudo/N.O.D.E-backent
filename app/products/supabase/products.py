@@ -166,18 +166,23 @@ async def fetch_product_by_slug(slug: str) -> Optional[dict]:
 
 
 async def fetch_suppliers() -> list:
-    """Fetch all verified supplier users."""
+    """Fetch all verified supplier users with their profile pics and business details."""
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             _url("users_table"),
             params={
                 "role": "eq.supplier",
-                "select": "id,full_name,email,business:business_table(*)",
+                "select": "id,full_name,email,profile_pic_url,business:business_table(*)",
             },
             headers=HEADERS,
         )
         resp.raise_for_status()
-        return resp.json()
+        rows = resp.json()
+        for u in rows:
+            biz_list = u.get("business") or []
+            biz = biz_list[0] if isinstance(biz_list, list) and biz_list else (biz_list if isinstance(biz_list, dict) else {})
+            u["imageUrl"] = biz.get("logo_url") or u.get("profile_pic_url") or ""
+        return rows
 
 
 async def insert_product(product_data: dict) -> dict:
