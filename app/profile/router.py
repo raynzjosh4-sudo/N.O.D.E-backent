@@ -33,15 +33,21 @@ async def get_my_profile(
             detail="User not found",
         )
 
+    biz_row = await sb.fetch_business(user_id)
+    profile_pic = (
+        user_row.get("profile_pic_url")
+        or user_row.get("avatar_url")
+        or (biz_row.get("logo_url") if biz_row else None)
+    )
+
     user = UserProfile(
         id=user_row["id"],
         full_name=user_row.get("full_name", ""),
         email=user_row.get("email", ""),
         role=user_row.get("role", "buyer"),
-        profile_pic_url=user_row.get("profile_pic_url"),
+        profile_pic_url=profile_pic,
     )
 
-    biz_row = await sb.fetch_business(user_id)
     business = (
         BusinessProfile(
             user_id=biz_row["user_id"],
@@ -52,6 +58,7 @@ async def get_my_profile(
             region=biz_row.get("region"),
             city=biz_row.get("city"),
             physical_address=biz_row.get("physical_address"),
+            logo_url=biz_row.get("logo_url"),
         )
         if biz_row
         else None

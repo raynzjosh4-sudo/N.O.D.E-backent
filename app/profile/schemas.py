@@ -23,6 +23,7 @@ class BusinessProfile(BaseModel):
     region: Optional[str] = None
     city: Optional[str] = None
     physical_address: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
