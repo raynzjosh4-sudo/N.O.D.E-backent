@@ -58,34 +58,34 @@ class TradingTerms(BaseModel):
 
 class ProductResponse(BaseModel):
     id: str
-    sku: str
-    name: str
-    brand: str
+    sku: str = ""
+    name: str = ""
+    brand: str = ""
     price_tiers: List[PriceTier] = []
     srp: float = 0.0
-    hs_code: str = ""
+    hs_code: Optional[str] = ""
     weight_kg: float = 0.0
     volume_cbm: float = 0.0
-    origin_country: str = ""
-    unbs_number: str = ""
-    denier: str = ""
-    material: str = ""
+    origin_country: Optional[str] = ""
+    unbs_number: Optional[str] = ""
+    denier: Optional[str] = ""
+    material: Optional[str] = ""
     supplier: Supplier = Supplier()
     category_id: str = ""
     current_stock: int = 0
     lead_time_days: int = 0
-    warehouse_loc: str = ""
-    seo_title: str = ""
-    seo_description: str = ""
+    warehouse_loc: Optional[str] = ""
+    seo_title: Optional[str] = ""
+    seo_description: Optional[str] = ""
     search_keywords: List[str] = []
-    slug: str = ""
-    image_url: str = ""
+    slug: Optional[str] = ""
+    image_url: Optional[str] = ""
     media_urls: List[str] = []
     aspect_ratio: float = 1.0
     available_colors: List[ProductColor] = []
     available_sizes: List[ProductSize] = []
     available_materials: List[ProductMaterial] = []
-    variant_label: str = "Size"
+    variant_label: Optional[str] = "Size"
     support: ProductSupport = ProductSupport()
     trading_terms: TradingTerms = TradingTerms()
 

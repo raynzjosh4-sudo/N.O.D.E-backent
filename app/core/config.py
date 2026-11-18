@@ -84,6 +84,37 @@ def supabase_anon_key() -> str:
     ).strip()
 
 
+def supabase_auth_config() -> tuple[str, str]:
+    return supabase_url(), supabase_anon_key()
+
+
+def supabase_admin_config() -> tuple[str, str]:
+    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", supabase_anon_key()).strip()
+    return supabase_url(), service_role_key
+
+
+class SmtpConfig:
+    def __init__(
+        self,
+        host: str = "",
+        port: int = 587,
+        username: str = "",
+        password: str = "",
+        from_address: str = "",
+        from_name: str = "N.O.D.E.",
+        use_ssl: bool = False,
+        use_starttls: bool = True,
+    ):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.from_address = from_address
+        self.from_name = from_name
+        self.use_ssl = use_ssl
+        self.use_starttls = use_starttls
+
+
 def r2_public_url() -> str:
     """Cloudflare R2 public base CDN URL from Flutter project."""
     return os.getenv("R2_PUBLIC_URL", "https://nodemediafiles.crimchart.com").rstrip("/")
