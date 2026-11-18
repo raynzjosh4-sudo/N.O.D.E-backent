@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -10,6 +11,7 @@ from app.authentication.email_auth.models.password_update import PasswordUpdateR
 from app.core.security import decode_access_token, hash_password
 from app.db.models import User, VerificationToken
 from app.db.session import get_db
+from app.profile import supabase_client as sb
 
 router = APIRouter()
 
@@ -23,26 +25,15 @@ async def update_password(
     reset_token: Annotated[str | None, Query(alias="token")] = None,
 ) -> JSONResponse:
     user: User | None = None
+    effective_token = (payload.token or reset_token or "").strip()
 
-    if authorization:
-        # Authenticated user updating their own password
-        raw_token = bearer_token(authorization)
-        token_data = decode_access_token(raw_token)
-        user_id = token_data.get("sub")
-        user = db.query(User).filter(User.id == str(user_id)).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User account not found.",
-            )
-
-    elif reset_token:
-        # User updating password via recovery reset token
+    if effective_token:
+        # User updating password via 6-digit recovery PIN
         now = datetime.now(timezone.utc)
         token_record = (
             db.query(VerificationToken)
             .filter(
-                VerificationToken.token == reset_token.strip(),
+                VerificationToken.token == effective_token,
                 VerificationToken.token_type == "recovery",
                 VerificationToken.is_used == False,  # noqa: E712
             )
@@ -52,7 +43,7 @@ async def update_password(
         if not token_record:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired password reset token.",
+                detail="Invalid or already used password reset PIN.",
             )
 
         expires_at = token_record.expires_at
@@ -62,29 +53,54 @@ async def update_password(
         if now > expires_at:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password reset token has expired.",
+                detail="Password reset PIN has expired. Please request a new PIN.",
             )
 
         user = db.query(User).filter(User.email == token_record.email).first()
+        if not user:
+            sb_user = await sb.fetch_user(user_id="", email=token_record.email)
+            user = User(
+                id=sb_user.get("id") or uuid4().hex,
+                email=token_record.email,
+                hashed_password=hash_password(payload.password),
+                is_verified=True,
+                is_active=True,
+            )
+            db.add(user)
+        else:
+            user.hashed_password = hash_password(payload.password)
+            user.is_verified = True
+            user.is_active = True
+
+        token_record.is_used = True
+
+    elif authorization:
+        # Authenticated user updating their own password
+        raw_token = bearer_token(authorization)
+        token_data = decode_access_token(raw_token)
+        user_id = token_data.get("sub")
+        email = token_data.get("email")
+
+        user = db.query(User).filter(User.id == str(user_id)).first()
+        if not user and email:
+            user = db.query(User).filter(User.email == str(email).lower()).first()
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User account not found.",
             )
-
-        token_record.is_used = True
-
+        user.hashed_password = hash_password(payload.password)
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="A valid Bearer token or reset token query parameter is required.",
+            detail="A valid recovery PIN or Authorization header is required.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user.hashed_password = hash_password(payload.password)
     db.commit()
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
-        content={"message": "Password has been successfully updated."},
+        content={"message": "Password has been successfully updated. You can now log in with your new password."},
     )
