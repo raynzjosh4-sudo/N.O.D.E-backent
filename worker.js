@@ -82,7 +82,7 @@ async function handleMediaRequest(request, env) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return jsonResponse({ error: "Method not allowed." }, 405);
   }
-  if (!env.MEDIA_BUCKET) {
+  if (!env.NODE_MEDIA_BUCKET) {
     return jsonResponse({ error: "The media bucket binding is not configured." }, 503);
   }
 
@@ -114,7 +114,7 @@ async function handleMediaRequest(request, env) {
         }
       }
 
-      await env.MEDIA_BUCKET.delete(key);
+      await env.NODE_MEDIA_BUCKET.delete(key);
       return jsonResponse({ success: true });
     }
 
@@ -156,7 +156,7 @@ async function handleMediaRequest(request, env) {
     }
 
     const key = `users/${user.id}/${folder}/Chart_${Date.now()}${extensions[contentType]}`;
-    await env.MEDIA_BUCKET.put(key, bytes, {
+    await env.NODE_MEDIA_BUCKET.put(key, bytes, {
       httpMetadata: { contentType },
       customMetadata: { uploadedBy: user.id },
     });
