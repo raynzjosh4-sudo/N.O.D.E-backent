@@ -1,4 +1,4 @@
-name = "node-media-worker"
+name = "node-media-cloude-worker"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
