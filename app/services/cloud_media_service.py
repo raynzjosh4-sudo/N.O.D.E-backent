@@ -127,9 +127,11 @@ async def upload_to_cloudflare(
     endpoint = get_cloudflare_media_url()
     # Prefer the user's own session token; anon key causes 401 on the Cloudflare worker
     auth_token = token or supabase_anon_key()
+    backend_secret = os.getenv("CLOUDFLARE_WORKER_SECRET", "node-r2-super-secret-2026")
 
     headers = {
         "Authorization": f"Bearer {auth_token}",
+        "X-Backend-Secret": backend_secret,
         "Content-Type": content_type or "application/octet-stream",
         "X-Node-Folder": folder,
     }
