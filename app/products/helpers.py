@@ -153,6 +153,20 @@ def _build_product_response(row: dict) -> ProductResponse:
     )
 
 
+def replace_primary_media_url(
+    media_urls: list[str],
+    old_primary_url: Optional[str],
+    new_primary_url: str,
+) -> list[str]:
+    """Put the new primary image first and remove its previous primary URL."""
+    other_urls = [
+        url
+        for url in media_urls
+        if url and url not in (old_primary_url, new_primary_url)
+    ]
+    return [new_primary_url, *other_urls]
+
+
 async def _resolve_category_id(
     category_id: Optional[str],
     new_category: Optional[CategoryCreatePayload],

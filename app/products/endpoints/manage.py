@@ -7,7 +7,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.deps import require_supplier_or_admin
-from app.products.helpers import _build_product_response, _resolve_category_id
+from app.products.helpers import (
+    _build_product_response,
+    _resolve_category_id,
+    replace_primary_media_url,
+)
 from app.products.schemas import (
     CategoryCreatePayload,
     PaginatedProducts,
@@ -167,11 +171,21 @@ async def update_existing_product(
         )
         updates["image_url"] = uploaded_url
         current_media = list(updates.get("media_urls") or existing.get("media_urls") or [])
-        if uploaded_url not in current_media:
-            current_media.insert(0, uploaded_url)
-        updates["media_urls"] = current_media
+        updates["media_urls"] = replace_primary_media_url(
+            current_media,
+            existing.get("image_url"),
+            uploaded_url,
+        )
     elif "image_base64" in updates:
         updates.pop("image_base64", None)
+
+    if updates.get("image_url"):
+        current_media = list(updates.get("media_urls") or existing.get("media_urls") or [])
+        updates["media_urls"] = replace_primary_media_url(
+            current_media,
+            existing.get("image_url"),
+            updates["image_url"],
+        )
 
     if "price_tiers" in updates:
         updates["price_tiers"] = [t.model_dump() if hasattr(t, "model_dump") else t for t in payload.price_tiers or []]

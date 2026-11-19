@@ -4,14 +4,21 @@ Supabase client operations for products catalog and mutations.
 import json
 from typing import Optional
 import httpx
-from app.core.config import supabase_url, supabase_anon_key
+from app.core.config import supabase_url, supabase_anon_key, supabase_admin_config
 
 SUPABASE_URL = supabase_url()
 SUPABASE_KEY = supabase_anon_key()
+_, SUPABASE_ADMIN_KEY = supabase_admin_config()
 
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+}
+
+WRITE_HEADERS = {
+    "apikey": SUPABASE_ADMIN_KEY,
+    "Authorization": f"Bearer {SUPABASE_ADMIN_KEY}",
     "Content-Type": "application/json",
 }
 
@@ -187,17 +194,19 @@ async def fetch_suppliers() -> list:
 
 async def insert_product(product_data: dict) -> dict:
     """Insert a new product into products_table."""
-    headers = {**HEADERS, "Prefer": "return=representation"}
+    headers = {**WRITE_HEADERS, "Prefer": "return=representation"}
     async with httpx.AsyncClient() as client:
         resp = await client.post(_url("products_table"), json=product_data, headers=headers)
         resp.raise_for_status()
         rows = resp.json()
-        return rows[0] if rows else product_data
+        if not rows:
+            raise RuntimeError("Supabase did not return the inserted product row.")
+        return rows[0]
 
 
 async def update_product(product_id: str, updates: dict) -> dict:
     """Update fields on an existing product in products_table."""
-    headers = {**HEADERS, "Prefer": "return=representation"}
+    headers = {**WRITE_HEADERS, "Prefer": "return=representation"}
     async with httpx.AsyncClient() as client:
         resp = await client.patch(
             _url("products_table"),
@@ -207,12 +216,16 @@ async def update_product(product_id: str, updates: dict) -> dict:
         )
         resp.raise_for_status()
         rows = resp.json()
-        return rows[0] if rows else updates
+        if not rows:
+            raise RuntimeError(
+                f"Supabase did not return an updated row for product '{product_id}'."
+            )
+        return rows[0]
 
 
 async def delete_product(product_id: str) -> bool:
     """Delete a product from products_table."""
-    headers = {**HEADERS, "Prefer": "return=representation"}
+    headers = {**WRITE_HEADERS, "Prefer": "return=representation"}
     async with httpx.AsyncClient() as client:
         resp = await client.delete(
             _url("products_table"),

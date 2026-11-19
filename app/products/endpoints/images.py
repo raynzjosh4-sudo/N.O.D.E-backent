@@ -3,7 +3,7 @@ Product and general image upload endpoints with Cloudflare R2 integration.
 """
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from app.core.deps import require_supplier_or_admin
-from app.products.helpers import _build_product_response
+from app.products.helpers import _build_product_response, replace_primary_media_url
 from app.products.schemas import ProductResponse
 from app.products.supabase_client import fetch_product_by_id, update_product
 from app.services.cloud_media_service import upload_to_cloudflare
@@ -56,13 +56,13 @@ async def upload_product_image_file(
     )
 
     # 2. Update image_url and media_urls in DB
-    current_media = list(existing.get("media_urls") or [])
-    if uploaded_url not in current_media:
-        current_media.insert(0, uploaded_url)
-
     updates = {
         "image_url": uploaded_url,
-        "media_urls": current_media,
+        "media_urls": replace_primary_media_url(
+            list(existing.get("media_urls") or []),
+            existing.get("image_url"),
+            uploaded_url,
+        ),
     }
     await update_product(product_id, updates)
 
