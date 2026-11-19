@@ -17,9 +17,8 @@ from fastapi import HTTPException, status
 from app.core.config import (
     backend_base_url,
     cloudflare_media_endpoint,
-    r2_public_url,
     supabase_anon_key,
-    supabase_url,
+    supabase_admin_config,
     is_production,
 )
 
@@ -142,13 +141,15 @@ async def upload_to_cloudflare(
                 data = resp.json()
                 if isinstance(data, dict) and data.get("url"):
                     return data["url"]
+                print("[CloudMediaService] Cloudflare upload returned no public URL.")
+            else:
+                print(f"[CloudMediaService] Cloudflare upload returned HTTP {resp.status_code}.")
     except Exception as exc:
         print(f"⚠️ [CloudMediaService] Cloudflare R2 upload attempt failed: {exc}")
 
     # Fallback 1: Supabase Storage
-    sb_url = supabase_url()
-    sb_key = supabase_anon_key()
-    if sb_url and sb_key:
+    sb_url, sb_key = supabase_admin_config()
+    if sb_url and sb_key and sb_key != supabase_anon_key():
         safe_name = f"{folder}/{int(time.time())}_{uuid.uuid4().hex[:8]}_{Path(filename).name}"
         sb_storage_url = f"{sb_url}/storage/v1/object/products/{safe_name}"
         sb_headers = {
@@ -161,10 +162,22 @@ async def upload_to_cloudflare(
                 sb_resp = await client.post(sb_storage_url, headers=sb_headers, content=file_bytes)
                 if sb_resp.status_code in (200, 201):
                     return f"{sb_url}/storage/v1/object/public/products/{safe_name}"
+                print(f"[CloudMediaService] Supabase Storage upload returned HTTP {sb_resp.status_code}.")
         except Exception as sb_exc:
             print(f"⚠️ [CloudMediaService] Supabase storage upload attempt failed: {sb_exc}")
+    elif is_production():
+        print("[CloudMediaService] Supabase Storage fallback requires SUPABASE_SERVICE_ROLE_KEY.")
 
-    # Fallback 2: Local static storage — always return an ABSOLUTE URL
+    if is_production():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "Image storage is unavailable. Cloudflare R2 and Supabase Storage "
+                "uploads failed; no persistent image was saved."
+            ),
+        )
+
+    # Local static storage is only suitable for non-production development.
     static_upload_dir = Path(__file__).resolve().parent.parent / "static" / "uploads" / folder
     static_upload_dir.mkdir(parents=True, exist_ok=True)
     safe_local_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{Path(filename).name}"
