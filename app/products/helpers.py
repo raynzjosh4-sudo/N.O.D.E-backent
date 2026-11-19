@@ -116,6 +116,8 @@ def _build_product_response(row: dict) -> ProductResponse:
         deliveryTerms=tt_raw.get("deliveryTerms"),
     ) if tt_raw else TradingTerms()
 
+    product_desc = row.get("description") or tt_raw.get("description") or ""
+
     media_urls = list(dict.fromkeys(row.get("media_urls") or []))
 
     return ProductResponse(
@@ -123,6 +125,7 @@ def _build_product_response(row: dict) -> ProductResponse:
         sku=row.get("sku") or "",
         name=row.get("name") or "",
         brand=row.get("brand") or "",
+        description=product_desc,
         price_tiers=price_tiers,
         srp=float(row.get("srp") or 0),
         hs_code=row.get("hs_code") or "",

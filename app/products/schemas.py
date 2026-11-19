@@ -50,6 +50,7 @@ class ProductSupport(BaseModel):
 class TradingTerms(BaseModel):
     id: str = "tt_default"
     content: str = "Standard trading terms apply for all wholesale transactions."
+    description: Optional[str] = None
     moq: Optional[str] = None
     warranty: Optional[str] = None
     paymentTerms: Optional[str] = None
@@ -61,6 +62,7 @@ class ProductResponse(BaseModel):
     sku: str = ""
     name: str = ""
     brand: str = ""
+    description: Optional[str] = ""
     price_tiers: List[PriceTier] = []
     srp: float = 0.0
     hs_code: Optional[str] = ""
@@ -75,6 +77,7 @@ class ProductResponse(BaseModel):
     current_stock: int = 0
     lead_time_days: int = 0
     warehouse_loc: Optional[str] = ""
+    description: Optional[str] = ""
     seo_title: Optional[str] = ""
     seo_description: Optional[str] = ""
     search_keywords: List[str] = []
@@ -143,6 +146,7 @@ class ProductCreateRequest(BaseModel):
     current_stock: int = 0
     lead_time_days: int = 0
     warehouse_loc: Optional[str] = ""
+    description: Optional[str] = ""
     seo_title: Optional[str] = ""
     seo_description: Optional[str] = ""
     search_keywords: List[str] = []

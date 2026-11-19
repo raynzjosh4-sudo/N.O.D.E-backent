@@ -127,7 +127,10 @@ async def create_new_product(
         "available_materials": [m.model_dump() for m in payload.available_materials],
         "variant_label": payload.variant_label or "Size",
         "support_info": payload.support_info.model_dump() if payload.support_info else {},
-        "trading_terms": payload.trading_terms.model_dump() if payload.trading_terms else {},
+        "trading_terms": {
+            **(payload.trading_terms.model_dump() if payload.trading_terms else {}),
+            **({"description": payload.description} if payload.description else {}),
+        },
     }
 
     inserted = await insert_product(product_data)
@@ -199,6 +202,12 @@ async def update_existing_product(
         updates["support_info"] = payload.support_info.model_dump()
     if "trading_terms" in updates and payload.trading_terms:
         updates["trading_terms"] = payload.trading_terms.model_dump()
+
+    desc_val = updates.pop("description", None)
+    if desc_val is not None:
+        tt = dict(updates.get("trading_terms") or existing.get("trading_terms") or {})
+        tt["description"] = desc_val
+        updates["trading_terms"] = tt
 
     if updates:
         await update_product(product_id, updates)
