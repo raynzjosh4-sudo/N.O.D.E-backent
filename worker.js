@@ -181,6 +181,23 @@ export default {
       return handleMediaRequest(request, env);
     }
 
+    if (url.pathname === "/_node/debug") {
+      const secret = request.headers.get("X-Backend-Secret");
+      if (secret !== (env.BACKEND_SECRET || "node-r2-super-secret-2026")) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      try {
+        const listed = await env.NODE_MEDIA_BUCKET.list({ limit: 20 });
+        return Response.json({
+          hasBucket: !!env.NODE_MEDIA_BUCKET,
+          objectsCount: listed.objects.length,
+          objects: listed.objects.map(o => ({ key: o.key, size: o.size, uploaded: o.uploaded })),
+        });
+      } catch (err) {
+        return Response.json({ error: String(err) }, 500);
+      }
+    }
+
     // Serve object directly from R2 bucket (no public access needed)
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method Not Allowed", { status: 405 });
