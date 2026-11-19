@@ -181,7 +181,18 @@ export default {
       return handleMediaRequest(request, env);
     }
 
-    // Direct passthrough to R2 bucket
-    return fetch(request);
+    // Serve object directly from R2 bucket (no public access needed)
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+    const key = url.pathname.replace(/^\//, "");
+    if (!key) return new Response("Not Found", { status: 404 });
+    const object = await env.NODE_MEDIA_BUCKET.get(key);
+    if (!object) return new Response("Not Found", { status: 404 });
+    const headers = new Headers();
+    headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    headers.set("Access-Control-Allow-Origin", "*");
+    return new Response(object.body, { headers });
   },
 };
