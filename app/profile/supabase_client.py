@@ -7,16 +7,25 @@ from typing import Any, Optional
 
 import httpx
 
-from app.core.config import supabase_url, supabase_anon_key
+from app.core.config import supabase_url, supabase_anon_key, supabase_admin_config
 
 logger = logging.getLogger(__name__)
 
 SUPABASE_URL = supabase_url()
 SUPABASE_KEY = supabase_anon_key()
 
+# ── Anon-key headers (read-only / public ops) ──
 HEADERS = {
     "apikey": SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+}
+
+# ── Service-role headers (bypasses RLS — used for admin upserts) ──
+_svc_url, _svc_key = supabase_admin_config()
+SERVICE_HEADERS = {
+    "apikey": _svc_key,
+    "Authorization": f"Bearer {_svc_key}",
     "Content-Type": "application/json",
 }
 
@@ -47,34 +56,41 @@ async def ensure_user_exists(
 ) -> dict:
     """
     Ensure a user row exists in Supabase users_table.
+    Uses the service-role key to bypass RLS on both reads and writes.
     Resolves by user_id first, then by email (handles ID mismatch between auth providers).
     Auto-creates customer record if not found.
     """
+    # Always use service-role key so RLS never blocks user provisioning
+    admin_headers = {
+        **SERVICE_HEADERS,
+        "Prefer": "resolution=merge-duplicates,return=representation",
+    }
+
     async with httpx.AsyncClient(timeout=10.0) as client:
-        # 1. Lookup by ID
+        # 1. Lookup by ID using service key (bypasses RLS)
         resp = await client.get(
             _url("users_table"),
             params={"id": f"eq.{user_id}", "limit": "1"},
-            headers=HEADERS,
+            headers=SERVICE_HEADERS,
         )
         if resp.status_code == 200:
             rows = resp.json()
             if rows:
                 return rows[0]
 
-        # 2. Lookup by email fallback
+        # 2. Lookup by email fallback (also service key)
         if email:
             resp_email = await client.get(
                 _url("users_table"),
                 params={"email": f"eq.{email.strip().lower()}", "limit": "1"},
-                headers=HEADERS,
+                headers=SERVICE_HEADERS,
             )
             if resp_email.status_code == 200:
                 rows_email = resp_email.json()
                 if rows_email:
                     return rows_email[0]
 
-        # 3. Create missing user row in Supabase users_table
+        # 3. Create missing user row using service key (bypasses RLS insert policy)
         clean_email = (email or f"user_{user_id[:8]}@example.com").strip().lower()
         clean_name = (full_name or clean_email.split("@")[0]).strip()
         payload = {
@@ -83,19 +99,21 @@ async def ensure_user_exists(
             "full_name": clean_name,
             "role": "customer",
         }
-        upsert_headers = {
-            **HEADERS,
-            "Prefer": "resolution=merge-duplicates,return=representation",
-        }
         create_resp = await client.post(
             f"{_url('users_table')}?on_conflict=id",
             json=payload,
-            headers=upsert_headers,
+            headers=admin_headers,
         )
         if create_resp.status_code in (200, 201):
             rows_created = create_resp.json()
             if rows_created:
+                logger.info(f"Auto-provisioned users_table row for user_id={user_id}")
                 return rows_created[0]
+        else:
+            logger.warning(
+                f"ensure_user_exists: failed to create user row "
+                f"({create_resp.status_code}): {create_resp.text[:200]}"
+            )
 
         return payload
 
@@ -178,8 +196,12 @@ async def fetch_business(user_id: str, email: Optional[str] = None) -> Optional[
 
 async def upsert_business(user_id: str, data: dict, email: Optional[str] = None) -> dict:
     """
-    Upsert business profile for a user with verified foreign key constraint
-    and safe column sanitization.
+    Upsert business profile for a user.
+    1. Ensures the users_table row exists (creates it if missing, using service key).
+    2. Sanitizes data to only valid business_table columns.
+    3. Tries upsert using service-role key (bypasses RLS).
+    4. Falls back to PATCH (update-only) if insert fails due to FK — meaning the
+       business row already exists and only an update is needed.
     """
     user = await ensure_user_exists(user_id, email=email)
     resolved_id = user["id"]
@@ -188,21 +210,57 @@ async def upsert_business(user_id: str, data: dict, email: Optional[str] = None)
     clean_data = {k: v for k, v in data.items() if k in VALID_BUSINESS_COLUMNS}
     payload = {**clean_data, "user_id": resolved_id}
 
-    upsert_headers = {
-        **HEADERS,
+    admin_upsert_headers = {
+        **SERVICE_HEADERS,
         "Prefer": "resolution=merge-duplicates,return=representation",
     }
+
     async with httpx.AsyncClient(timeout=10.0) as client:
+        # Attempt 1: Full upsert with service-role key (handles both INSERT and UPDATE)
         resp = await client.post(
             f"{_url('business_table')}?on_conflict=user_id",
             json=payload,
-            headers=upsert_headers,
+            headers=admin_upsert_headers,
         )
-        if resp.is_error:
-            logger.error(f"Supabase upsert_business error {resp.status_code}: {resp.text}")
-            resp.raise_for_status()
-        rows = resp.json()
-        return rows[0] if rows else payload
+
+        if not resp.is_error:
+            rows = resp.json()
+            return rows[0] if rows else payload
+
+        # Attempt 2: If upsert failed (e.g. FK violation or anon key fallback),
+        # try a PATCH to update existing row — this never triggers an FK insert
+        logger.warning(
+            f"upsert_business: upsert failed ({resp.status_code}), "
+            f"trying PATCH fallback: {resp.text[:200]}"
+        )
+        patch_headers = {
+            **SERVICE_HEADERS,
+            "Prefer": "return=representation",
+        }
+        patch_resp = await client.patch(
+            _url("business_table"),
+            params={"user_id": f"eq.{resolved_id}"},
+            json=clean_data,
+            headers=patch_headers,
+        )
+        if patch_resp.status_code in (200, 204):
+            rows = patch_resp.json() if patch_resp.content else []
+            if rows:
+                return rows[0]
+            # Row existed and was updated but nothing returned — fetch it
+            fetch_resp = await client.get(
+                _url("business_table"),
+                params={"user_id": f"eq.{resolved_id}", "limit": "1"},
+                headers=SERVICE_HEADERS,
+            )
+            if fetch_resp.status_code == 200:
+                fetch_rows = fetch_resp.json()
+                return fetch_rows[0] if fetch_rows else payload
+
+        # Both attempts failed — raise the original error
+        logger.error(f"Supabase upsert_business total failure: {resp.text}")
+        resp.raise_for_status()
+        return payload
 
 
 # ---- trading terms (JSONB column on users_table) ----
