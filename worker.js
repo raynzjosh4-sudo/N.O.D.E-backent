@@ -5,6 +5,7 @@
  * Supports both:
  * 1. Direct mobile Flutter uploads via Supabase user JWT.
  * 2. FastAPI backend uploads via X-Backend-Secret.
+ * Version: 1.0.1
  */
 
 const MEDIA_API_PATH = "/_node/media";
