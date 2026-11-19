@@ -103,14 +103,14 @@ async function handleMediaRequest(request, env) {
         typeof key !== "string" ||
         key.split("/").length < 4 ||
         key.split("/").some((part) => part === "..") ||
-        !/^users\/[^/]+\/(products|pdfs)\//.test(key)
+        !/^users\/[^/]+\/(products|categories|pdfs)\//.test(key)
       ) {
         throw requestError(400, "Invalid media key.");
       }
 
       if (!key.startsWith(`users/${user.id}/`)) {
         const role = await getUserRole(user.id, token, supabaseUrl, env);
-        if (role !== "admin" || !key.includes("/products/")) {
+        if (role !== "admin" || (!key.includes("/products/") && !key.includes("/categories/"))) {
           throw requestError(403, "You cannot delete this media.");
         }
       }
@@ -120,14 +120,14 @@ async function handleMediaRequest(request, env) {
     }
 
     const folder = request.headers.get("x-node-folder") || "products";
-    if (folder !== "products" && folder !== "pdfs") {
+    if (folder !== "products" && folder !== "categories" && folder !== "pdfs") {
       throw requestError(400, "Unsupported media folder.");
     }
 
-    if (folder === "products") {
+    if (folder === "products" || folder === "categories") {
       const role = await getUserRole(user.id, token, supabaseUrl, env);
       if (role !== "supplier" && role !== "admin") {
-        throw requestError(403, "Only suppliers and admins can upload product media.");
+        throw requestError(403, "Only suppliers and admins can upload media.");
       }
     }
 
@@ -180,23 +180,6 @@ export default {
 
     if (url.pathname === MEDIA_API_PATH) {
       return handleMediaRequest(request, env);
-    }
-
-    if (url.pathname === "/_node/debug") {
-      const secret = request.headers.get("X-Backend-Secret");
-      if (secret !== (env.BACKEND_SECRET || "node-r2-super-secret-2026")) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      try {
-        const listed = await env.NODE_MEDIA_BUCKET.list({ limit: 20 });
-        return Response.json({
-          hasBucket: !!env.NODE_MEDIA_BUCKET,
-          objectsCount: listed.objects.length,
-          objects: listed.objects.map(o => ({ key: o.key, size: o.size, uploaded: o.uploaded })),
-        });
-      } catch (err) {
-        return Response.json({ error: String(err) }, 500);
-      }
     }
 
     // Serve object directly from R2 bucket (no public access needed)
