@@ -130,6 +130,7 @@ async def upload_to_cloudflare(
     backend_secret = os.getenv("CLOUDFLARE_WORKER_SECRET", "node-r2-super-secret-2026")
 
     headers = {
+        "User-Agent": "NODE-Backend/1.0 (CloudflareMediaClient)",
         "Authorization": f"Bearer {auth_token}",
         "X-Backend-Secret": backend_secret,
         "Content-Type": content_type or "application/octet-stream",
@@ -137,15 +138,15 @@ async def upload_to_cloudflare(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=25.0) as client:
             resp = await client.post(endpoint, headers=headers, content=file_bytes)
             if resp.status_code in (200, 201):
                 data = resp.json()
                 if isinstance(data, dict) and data.get("url"):
                     return data["url"]
-                print("[CloudMediaService] Cloudflare upload returned no public URL.")
+                print(f"[CloudMediaService] Cloudflare upload returned no public URL: {resp.text}")
             else:
-                print(f"[CloudMediaService] Cloudflare upload returned HTTP {resp.status_code}.")
+                print(f"[CloudMediaService] Cloudflare upload returned HTTP {resp.status_code}: {resp.text}")
     except Exception as exc:
         print(f"⚠️ [CloudMediaService] Cloudflare R2 upload attempt failed: {exc}")
 
@@ -167,25 +168,9 @@ async def upload_to_cloudflare(
                 print(f"[CloudMediaService] Supabase Storage upload returned HTTP {sb_resp.status_code}.")
         except Exception as sb_exc:
             print(f"⚠️ [CloudMediaService] Supabase storage upload attempt failed: {sb_exc}")
-    elif is_production():
-        print("[CloudMediaService] Supabase Storage fallback requires SUPABASE_SERVICE_ROLE_KEY.")
 
-    if is_production():
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "Image storage is unavailable. Cloudflare R2 and Supabase Storage "
-                "uploads failed; no persistent image was saved."
-            ),
-        )
-
-    # Local static storage is only suitable for non-production development.
-    static_upload_dir = Path(__file__).resolve().parent.parent / "static" / "uploads" / folder
-    static_upload_dir.mkdir(parents=True, exist_ok=True)
-    safe_local_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{Path(filename).name}"
-    local_file_path = static_upload_dir / safe_local_name
-    local_file_path.write_bytes(file_bytes)
-
-    # Build absolute URL so mobile / web clients can load it without knowing the host
-    base = backend_base_url()
-    return f"{base}/static/uploads/{folder}/{safe_local_name}"
+    # Never fall back to Render local disk: persistent cloud storage is required.
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Image upload to persistent cloud storage (Cloudflare R2) failed. Ephemeral storage is disabled.",
+    )
