@@ -1,0 +1,14 @@
+N.O.D.E. Security Alert: New Sign-In Detected
+
+Your N.O.D.E. account was just accessed:
+
+Time: {{SIGN_IN_TIME}}
+Device: {{DEVICE_INFO}}
+IP Address: {{IP_ADDRESS}}
+Activity: Successful sign-in
+
+If this was you, no action is needed. If you did not sign in, please secure your account immediately:
+{{ACTION_LINK}}
+
+N.O.D.E. Security Team
+© 2026 N.O.D.E. All rights reserved.

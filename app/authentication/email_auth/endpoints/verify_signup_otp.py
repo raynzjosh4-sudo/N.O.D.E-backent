@@ -1,15 +1,19 @@
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.authentication.email_auth.endpoints.sign_in import parse_device_summary, send_security_sign_in_alert
 from app.authentication.email_auth.models.otp_verify import OtpVerifyRequest
 from app.core.security import create_access_token
 from app.db.models import User, VerificationToken
 from app.db.session import get_db
 from app.profile import supabase_client as sb
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -19,6 +23,7 @@ async def verify_signup_otp(
     payload: OtpVerifyRequest,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ) -> JSONResponse:
     email = str(payload.email).strip().lower()
     token = payload.token.strip()
@@ -86,6 +91,23 @@ async def verify_signup_otp(
     user_dict["role"] = effective_role
     user_dict["full_name"] = effective_name
     user_dict["profile_pic_url"] = effective_pic
+
+    # ── Dispatch Security Sign-In Alert Email in the Background ──
+    try:
+        now_str = datetime.now(timezone.utc).strftime("%B %d, %Y at %I:%M %p UTC")
+        raw_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "Unknown IP")
+        client_ip = raw_ip.split(",")[0].strip() if "," in raw_ip else raw_ip
+        device_summary = parse_device_summary(request.headers.get("user-agent"))
+
+        background_tasks.add_task(
+            send_security_sign_in_alert,
+            recipient=user.email,
+            sign_in_time=now_str,
+            device_info=device_summary,
+            ip_address=client_ip,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to schedule security sign-in alert email: {e}")
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
