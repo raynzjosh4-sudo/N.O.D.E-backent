@@ -122,7 +122,10 @@ def r2_public_url() -> str:
 
 def cloudflare_media_endpoint() -> str:
     """Cloudflare media upload worker endpoint."""
-    return os.getenv("CLOUDFLARE_MEDIA_ENDPOINT", f"{r2_public_url()}/_node/media").strip()
+    return os.getenv(
+        "CLOUDFLARE_MEDIA_ENDPOINT",
+        "https://node-media-cloude-worker.ns8011788.workers.dev/_node/media",
+    ).strip()
 
 
 def backend_base_url() -> str:
