@@ -3,6 +3,7 @@ Supabase REST client for profile & business data with unified ID resolution.
 """
 import json
 import logging
+import uuid
 from typing import Any, Optional
 
 import httpx
@@ -57,9 +58,22 @@ async def ensure_user_exists(
     """
     Ensure a user row exists in Supabase users_table.
     Uses the service-role key to bypass RLS on both reads and writes.
-    Resolves by user_id first, then by email (handles ID mismatch between auth providers).
+    Resolves by local SQLite DB, by user_id first, then by email (handles ID mismatch between auth providers).
     Auto-creates customer record if not found.
     """
+    # 0. If email is not passed or empty, resolve email from local SQLite DB using user_id
+    resolved_email = (email or "").strip().lower()
+    if not resolved_email:
+        try:
+            from app.db.session import SessionLocal
+            from app.db.models import User
+            with SessionLocal() as db:
+                local_user = db.query(User).filter(User.id == user_id).first()
+                if local_user and local_user.email:
+                    resolved_email = local_user.email.strip().lower()
+        except Exception as e:
+            logger.debug(f"Could not resolve email from local SQLite: {e}")
+
     # Always use service-role key so RLS never blocks user provisioning
     admin_headers = {
         **SERVICE_HEADERS,
@@ -67,7 +81,7 @@ async def ensure_user_exists(
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        # 1. Lookup by ID using service key (bypasses RLS)
+        # 1. Lookup by ID directly
         resp = await client.get(
             _url("users_table"),
             params={"id": f"eq.{user_id}", "limit": "1"},
@@ -78,11 +92,27 @@ async def ensure_user_exists(
             if rows:
                 return rows[0]
 
-        # 2. Lookup by email fallback (also service key)
-        if email:
+        # 1b. If user_id is a 32-char hex, also lookup by formatted hyphenated UUID
+        if len(user_id) == 32 and "-" not in user_id:
+            try:
+                formatted_uuid = str(uuid.UUID(hex=user_id))
+                resp_uuid = await client.get(
+                    _url("users_table"),
+                    params={"id": f"eq.{formatted_uuid}", "limit": "1"},
+                    headers=SERVICE_HEADERS,
+                )
+                if resp_uuid.status_code == 200:
+                    rows_uuid = resp_uuid.json()
+                    if rows_uuid:
+                        return rows_uuid[0]
+            except Exception:
+                pass
+
+        # 2. Lookup by email fallback (handles ID differences across SQLite/auth migrations)
+        if resolved_email:
             resp_email = await client.get(
                 _url("users_table"),
-                params={"email": f"eq.{email.strip().lower()}", "limit": "1"},
+                params={"email": f"eq.{resolved_email}", "limit": "1"},
                 headers=SERVICE_HEADERS,
             )
             if resp_email.status_code == 200:
@@ -91,10 +121,17 @@ async def ensure_user_exists(
                     return rows_email[0]
 
         # 3. Create missing user row using service key (bypasses RLS insert policy)
-        clean_email = (email or f"user_{user_id[:8]}@example.com").strip().lower()
+        clean_email = (resolved_email or f"user_{user_id[:8]}@example.com").strip().lower()
         clean_name = (full_name or clean_email.split("@")[0]).strip()
+        target_id = user_id
+        if len(target_id) == 32 and "-" not in target_id:
+            try:
+                target_id = str(uuid.UUID(hex=target_id))
+            except Exception:
+                pass
+
         payload = {
-            "id": user_id,
+            "id": target_id,
             "email": clean_email,
             "full_name": clean_name,
             "role": "customer",
@@ -107,14 +144,24 @@ async def ensure_user_exists(
         if create_resp.status_code in (200, 201):
             rows_created = create_resp.json()
             if rows_created:
-                logger.info(f"Auto-provisioned users_table row for user_id={user_id}")
+                logger.info(f"Auto-provisioned users_table row for user_id={target_id}")
                 return rows_created[0]
-        else:
-            logger.warning(
-                f"ensure_user_exists: failed to create user row "
-                f"({create_resp.status_code}): {create_resp.text[:200]}"
+        elif create_resp.status_code == 409 or "duplicate" in create_resp.text.lower() or "unique" in create_resp.text.lower():
+            # Duplicate email — fetch existing row by email
+            resp_email2 = await client.get(
+                _url("users_table"),
+                params={"email": f"eq.{clean_email}", "limit": "1"},
+                headers=SERVICE_HEADERS,
             )
+            if resp_email2.status_code == 200:
+                rows_email2 = resp_email2.json()
+                if rows_email2:
+                    return rows_email2[0]
 
+        logger.warning(
+            f"ensure_user_exists: failed to create user row "
+            f"({create_resp.status_code}): {create_resp.text[:200]}"
+        )
         return payload
 
 

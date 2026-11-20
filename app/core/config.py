@@ -89,7 +89,17 @@ def supabase_auth_config() -> tuple[str, str]:
 
 
 def supabase_admin_config() -> tuple[str, str]:
-    service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", supabase_anon_key()).strip()
+    # Use .get() with explicit empty-string fallback detection so a blank env var
+    # still falls back to the anon key (prevents silent RLS failures).
+    raw = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    service_role_key = raw if raw else supabase_anon_key()
+    if service_role_key == supabase_anon_key():
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "SUPABASE_SERVICE_ROLE_KEY is not set — falling back to anon key. "
+            "RLS-protected write operations (users_table, business_table, saved_items) "
+            "will fail. Add the service_role key to your environment variables."
+        )
     return supabase_url(), service_role_key
 
 
