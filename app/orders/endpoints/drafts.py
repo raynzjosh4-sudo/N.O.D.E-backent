@@ -14,7 +14,7 @@ from app.orders.schemas import (
 from app.orders.supabase_client import (
     delete_draft_for_user,
     fetch_drafts_for_user,
-    upsert_order,
+    upsert_draft_order,
 )
 
 router = APIRouter()
@@ -42,7 +42,7 @@ async def save_draft(
     order_data["created_at"] = now
     order_data["updated_at"] = now
 
-    result = await upsert_order(order_data)
+    result = await upsert_draft_order(order_data, user_id=current_user_id)
     return OrderResponse(**result)
 
 
