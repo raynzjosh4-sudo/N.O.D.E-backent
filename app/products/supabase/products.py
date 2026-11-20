@@ -27,6 +27,28 @@ def _url(table: str) -> str:
     return f"{SUPABASE_URL}/rest/v1/{table}"
 
 
+async def _get_category_family_ids(category_id: str) -> list[str]:
+    """Find category_id and all its direct or indirect child category IDs."""
+    cat_ids = {category_id}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(_url("categories_table"), params={"select": "id,parent_id"}, headers=HEADERS)
+            if resp.status_code == 200:
+                all_cats = resp.json()
+                added = True
+                while added:
+                    added = False
+                    for c in all_cats:
+                        cid = c.get("id")
+                        pid = c.get("parent_id")
+                        if pid and pid in cat_ids and cid not in cat_ids:
+                            cat_ids.add(cid)
+                            added = True
+    except Exception:
+        pass
+    return list(cat_ids)
+
+
 async def fetch_products(
     *,
     supplier_id: Optional[str] = None,
@@ -37,11 +59,11 @@ async def fetch_products(
     sort_by: str = "created_at",
     ascending: bool = False,
 ) -> dict:
-    """Fetch paginated lightweight product list."""
+    """Fetch paginated lightweight product list with category and supplier resolution."""
     offset = (page - 1) * limit
 
     params: dict = {
-        "select": "id,name,sku,brand,srp,image_url,created_at,supplier_id",
+        "select": "id,name,sku,brand,srp,image_url,created_at,supplier_id,category_id",
         "order": f"{sort_by}.{'asc' if ascending else 'desc'}",
         "limit": limit,
         "offset": offset,
@@ -51,7 +73,11 @@ async def fetch_products(
         params["supplier_id"] = f"eq.{supplier_id}"
 
     if category_id:
-        params["category_id"] = f"eq.{category_id}"
+        family_ids = await _get_category_family_ids(category_id)
+        if len(family_ids) > 1:
+            params["category_id"] = f"in.({','.join(family_ids)})"
+        else:
+            params["category_id"] = f"eq.{category_id}"
 
     if search:
         params["or"] = f"(name.ilike.*{search}*,sku.ilike.*{search}*)"

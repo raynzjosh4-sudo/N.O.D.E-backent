@@ -21,15 +21,52 @@ def _url(table: str) -> str:
 
 
 async def fetch_categories() -> list:
-    """Fetch all categories ordered by name (matches Flutter fetchCategories)."""
-    async with httpx.AsyncClient() as client:
+    """Fetch all categories ordered by name with live accurate product counts."""
+    async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(
             _url("categories_table"),
             params={"order": "name.asc"},
             headers=HEADERS,
         )
         resp.raise_for_status()
-        return resp.json()
+        categories = resp.json()
+
+        # Compute dynamic product counts from products_table
+        try:
+            prod_resp = await client.get(
+                _url("products_table"),
+                params={"select": "category_id"},
+                headers=HEADERS,
+            )
+            if prod_resp.status_code == 200:
+                prod_rows = prod_resp.json()
+                counts: dict[str, int] = {}
+                for r in prod_rows:
+                    cid = r.get("category_id")
+                    if cid:
+                        counts[cid] = counts.get(cid, 0) + 1
+
+                cat_map = {c["id"]: c for c in categories}
+                for c in categories:
+                    cid = c["id"]
+                    stored_count = c.get("item_count") or 0
+                    direct_count = counts.get(cid, 0)
+                    c["item_count"] = max(stored_count, direct_count)
+
+                # Accumulate children counts into parents bottom-up
+                sorted_by_level = sorted(categories, key=lambda x: x.get("level", 0), reverse=True)
+                for c in sorted_by_level:
+                    pid = c.get("parent_id")
+                    if pid and pid in cat_map:
+                        parent = cat_map[pid]
+                        child_count = c.get("item_count", 0)
+                        if child_count > 0:
+                            current_parent_count = parent.get("item_count", 0)
+                            parent["item_count"] = max(current_parent_count, direct_count + child_count)
+        except Exception:
+            pass
+
+        return categories
 
 
 async def insert_category(

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class OrderStatus(str, Enum):
     NEW = "new"
+    SEEN = "seen"
     PROCESSING = "processing"
     SUBMITTED = "submitted"
     COMPLETED = "completed"
