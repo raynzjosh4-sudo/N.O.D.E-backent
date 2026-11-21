@@ -201,11 +201,10 @@ async function fetchFromWebAppWithMetadata(request, env, url, product) {
   }
 
   let html = await response.text();
+  const pricing = getWholesalePricing(product);
   const name = product.name || "Wholesale Product";
   const brand = product.brand || "N.O.D.E. Verified";
-  const srp = Number(product.srp) || 0;
   const imageUrl = product.image_url || (Array.isArray(product.media_urls) && product.media_urls[0]) || APP_ICON_URL;
-  const priceFormatted = srp > 0 ? `UGX ${srp.toLocaleString("en-US")}` : "";
 
   const jsonLd = {
     "@context": "https://schema.org/",
@@ -222,7 +221,7 @@ async function fetchFromWebAppWithMetadata(request, env, url, product) {
       "@type": "Offer",
       url: url.toString(),
       priceCurrency: "UGX",
-      price: srp > 0 ? String(srp) : "0",
+      price: pricing.price > 0 ? String(pricing.price) : "0",
       priceValidUntil: "2027-12-31",
       itemCondition: "https://schema.org/NewCondition",
       availability: (product.current_stock ?? 1) > 0 ? "https://schema.org/InStock" : "https://schema.org/PreOrder",
@@ -235,9 +234,9 @@ async function fetchFromWebAppWithMetadata(request, env, url, product) {
   };
 
   const injection = `
-  <title>${escapeHtml(name)} — Wholesale ${priceFormatted} | N.O.D.E.</title>
-  <meta name="description" content="Wholesale ${escapeHtml(name)} for ${priceFormatted} on N.O.D.E.">
-  <meta property="og:title" content="${escapeHtml(name)} — Wholesale ${priceFormatted} | N.O.D.E.">
+  <title>${escapeHtml(name)} — ${escapeHtml(pricing.priceDisplay)} | N.O.D.E.</title>
+  <meta name="description" content="${escapeHtml(name)} — ${escapeHtml(pricing.priceDisplay)} (MOQ: ${pricing.moq} pcs). ${escapeHtml(pricing.tierSummary)}">
+  <meta property="og:title" content="${escapeHtml(name)} — ${escapeHtml(pricing.priceDisplay)} | N.O.D.E.">
   <meta property="og:image" content="${escapeHtml(imageUrl)}">
   <script type="application/ld+json">
 ${JSON.stringify(jsonLd, null, 2)}
@@ -253,6 +252,71 @@ ${JSON.stringify(jsonLd, null, 2)}
       "Cache-Control": "public, max-age=3600",
     },
   });
+}
+
+/**
+ * Extract wholesale tier pricing (volume tiers take precedence over retail SRP)
+ */
+function getWholesalePricing(product) {
+  let tiers = [];
+  try {
+    if (Array.isArray(product.price_tiers)) {
+      tiers = product.price_tiers;
+    } else if (typeof product.price_tiers === "string") {
+      tiers = JSON.parse(product.price_tiers);
+    }
+  } catch (e) {}
+
+  if (tiers && tiers.length > 0) {
+    const validTiers = tiers
+      .filter((t) => t && Number(t.price) > 0)
+      .sort((a, b) => Number(a.minQuantity || 1) - Number(b.minQuantity || 1));
+
+    if (validTiers.length > 0) {
+      const prices = validTiers.map((t) => Number(t.price));
+      const minWholesalePrice = Math.min(...prices);
+      const maxWholesalePrice = Math.max(...prices);
+      const startingTier = validTiers[0];
+      const moq = startingTier.minQuantity || product.moq || 1;
+
+      const tierSummary = validTiers
+        .map((t) => {
+          const qty = t.minQuantity ? `${t.minQuantity}+ pcs` : (t.label || "Tier");
+          return `${qty}: UGX ${Number(t.price).toLocaleString("en-US")}`;
+        })
+        .join(" • ");
+
+      const priceDisplay =
+        minWholesalePrice === maxWholesalePrice
+          ? `Wholesale UGX ${minWholesalePrice.toLocaleString("en-US")} / unit`
+          : `Wholesale from UGX ${minWholesalePrice.toLocaleString("en-US")} / unit`;
+
+      return {
+        hasTiers: true,
+        price: minWholesalePrice,
+        priceFormatted: `UGX ${minWholesalePrice.toLocaleString("en-US")}`,
+        minWholesalePrice,
+        maxWholesalePrice,
+        moq,
+        priceDisplay,
+        tierSummary,
+        validTiers,
+      };
+    }
+  }
+
+  const srp = Number(product.srp) || 0;
+  return {
+    hasTiers: false,
+    price: srp,
+    priceFormatted: srp > 0 ? `UGX ${srp.toLocaleString("en-US")}` : "",
+    minWholesalePrice: srp,
+    maxWholesalePrice: srp,
+    moq: product.moq || 1,
+    priceDisplay: srp > 0 ? `UGX ${srp.toLocaleString("en-US")} / unit` : "Wholesale Direct",
+    tierSummary: "",
+    validTiers: [],
+  };
 }
 
 /**
@@ -289,26 +353,29 @@ async function fetchProductFromSupabase(productId, env) {
  * Return JSON share metadata for apps
  */
 function generateProductJsonResponse(product, url) {
+  const pricing = getWholesalePricing(product);
   const name = product.name || "Wholesale Product";
   const brand = product.brand || "";
-  const srp = Number(product.srp) || 0;
-  const priceFormatted = srp > 0 ? `UGX ${srp.toLocaleString("en-US")}` : "";
   const imageUrl = product.image_url || (Array.isArray(product.media_urls) && product.media_urls[0]) || FALLBACK_IMAGE;
   const warehouse = product.warehouse_loc || "Kampala, Uganda";
   const shareUrl = `https://${WEB_APP_HOST}/product/specs/${product.id}`;
-  const shareText = `Check out ${name} on N.O.D.E Wholesale for ${priceFormatted}!\n${shareUrl}`;
+  const shareText = `*${name}* — ${pricing.priceDisplay}\nWholesale Tiers: ${pricing.tierSummary || pricing.priceFormatted}\nOrder on N.O.D.E. Wholesale:\n${shareUrl}`;
 
   return Response.json(
     {
       id: product.id,
       name,
       brand,
-      price: srp,
+      price: pricing.price,
+      retailPrice: Number(product.srp) || 0,
       currency: "UGX",
-      priceFormatted,
+      priceFormatted: pricing.priceFormatted,
+      priceDisplay: pricing.priceDisplay,
+      priceTiers: pricing.validTiers,
+      tierSummary: pricing.tierSummary,
       imageUrl,
       warehouse,
-      moq: product.moq || 1,
+      moq: pricing.moq,
       shareUrl,
       whatsappUrl: `https://wa.me/?text=${encodeURIComponent(shareText)}`,
       shareText,
@@ -322,23 +389,20 @@ function generateProductJsonResponse(product, url) {
  * Build rich HTML page with Open Graph and Schema.org JSON-LD for Products
  */
 function generateProductHtmlResponse(product, url) {
+  const pricing = getWholesalePricing(product);
   const name = product.name || "Wholesale Product";
   const brand = product.brand ? `${product.brand} ` : "";
-  const srp = Number(product.srp) || 0;
-  const priceFormatted = srp > 0 ? `UGX ${srp.toLocaleString("en-US")}` : "";
-  const priceDisplay = priceFormatted ? `Wholesale ${priceFormatted}` : "Wholesale Direct";
-
-  const metaTitle = `${name} — ${priceDisplay} | N.O.D.E.`;
   const imageUrl = product.image_url || (Array.isArray(product.media_urls) && product.media_urls[0]) || FALLBACK_IMAGE;
   const warehouse = product.warehouse_loc || "Kampala, Uganda";
-  const moqText = product.moq ? ` • Min. Order: ${product.moq} Units` : "";
+  const moqText = ` • Min. Order: ${pricing.moq} Units`;
   const rawDesc =
     product.seo_description ||
     product.description ||
     `Wholesale ${name} available directly from verified suppliers in ${warehouse} on N.O.D.E. (National Online Distribution & Enterprise).`;
   const cleanDesc = rawDesc.replace(/\s+/g, " ").trim().slice(0, 200);
 
-  const metaDescription = `${priceFormatted ? `${priceFormatted} / unit${moqText} • ` : ""}Supplier: ${
+  const metaTitle = `${name} — ${pricing.priceDisplay} | N.O.D.E.`;
+  const metaDescription = `${pricing.priceFormatted ? `${pricing.priceFormatted} / unit${moqText} • ` : ""}${pricing.tierSummary ? `Tiers: ${pricing.tierSummary} • ` : ""}Supplier: ${
     brand || "Verified"
   }(${warehouse}). ${cleanDesc}`;
 
@@ -357,7 +421,7 @@ function generateProductHtmlResponse(product, url) {
       "@type": "Offer",
       url: url.toString(),
       priceCurrency: "UGX",
-      price: srp > 0 ? String(srp) : "0",
+      price: pricing.price > 0 ? String(pricing.price) : "0",
       priceValidUntil: "2027-12-31",
       itemCondition: "https://schema.org/NewCondition",
       availability: (product.current_stock ?? 1) > 0 ? "https://schema.org/InStock" : "https://schema.org/PreOrder",
@@ -394,7 +458,7 @@ function generateProductHtmlResponse(product, url) {
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="${escapeHtml(name)}">
-  ${srp > 0 ? `<meta property="product:price:amount" content="${srp}">\n  <meta property="product:price:currency" content="UGX">` : ""}
+  ${pricing.price > 0 ? `<meta property="product:price:amount" content="${pricing.price}">\n  <meta property="product:price:currency" content="UGX">` : ""}
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
@@ -416,17 +480,13 @@ ${JSON.stringify(jsonLd, null, 2)}
     </div>
     <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name)}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
     <h1 style="font-size: 24px; margin-bottom: 8px;">${escapeHtml(name)}</h1>
-    <p style="font-size: 20px; color: #12BBF0; font-weight: bold; margin-bottom: 12px;">${escapeHtml(priceFormatted)} / unit</p>
+    <p style="font-size: 20px; color: #12BBF0; font-weight: bold; margin-bottom: 6px;">${escapeHtml(pricing.priceDisplay)}</p>
+    ${pricing.tierSummary ? `<p style="font-size: 13px; color: #58A6FF; margin-bottom: 12px; font-weight: 500;">${escapeHtml(pricing.tierSummary)}</p>` : ""}
     <p style="font-size: 14px; color: #8B949E; line-height: 1.6; margin-bottom: 24px;">${escapeHtml(cleanDesc)}</p>
     <a href="${escapeHtml(url.pathname)}" style="display: inline-block; background: #12BBF0; color: #FFF; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">
       Open in N.O.D.E. App
     </a>
   </div>
-  <script>
-    if (typeof window !== 'undefined' && !/bot|crawl|slurp|spider/i.test(navigator.userAgent)) {
-      window.location.replace("${url.pathname}");
-    }
-  </script>
 </body>
 </html>`;
 
@@ -706,14 +766,15 @@ async function generateFullSitemap(request, env, url) {
 
     try {
       // 1. Fetch all wholesale products
-      const pRes = await fetch(`${supabaseUrl}/rest/v1/products_table?select=id,name,brand,srp,image_url,media_urls,updated_at,created_at&order=created_at.desc&limit=2000`, { headers });
+      const pRes = await fetch(`${supabaseUrl}/rest/v1/products_table?select=id,name,brand,srp,price_tiers,moq,image_url,media_urls,updated_at,created_at&order=created_at.desc&limit=2000`, { headers });
       if (pRes.ok) {
         const products = await pRes.json();
         for (const p of products) {
+          const pricing = getWholesalePricing(p);
           const lastMod = (p.updated_at || p.created_at || new Date().toISOString()).split("T")[0];
           const img = p.image_url || (Array.isArray(p.media_urls) && p.media_urls[0]);
           const brandText = p.brand ? ` - ${escapeXml(p.brand)}` : "";
-          const priceText = p.srp > 0 ? `Wholesale UGX ${Number(p.srp).toLocaleString("en-US")}` : "Wholesale Direct";
+          const captionText = `${pricing.priceDisplay}${pricing.tierSummary ? ` • Tiers: ${pricing.tierSummary}` : ""}${brandText}`;
 
           // Specs URL
           xml += `
@@ -727,7 +788,7 @@ async function generateFullSitemap(request, env, url) {
     <image:image>
       <image:loc>${escapeXml(img)}</image:loc>
       <image:title>${escapeXml(p.name || "Wholesale Product")}</image:title>
-      <image:caption>${priceText}${brandText}</image:caption>
+      <image:caption>${escapeXml(captionText)}</image:caption>
     </image:image>`
         : ""
     }
