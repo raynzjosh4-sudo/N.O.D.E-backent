@@ -108,17 +108,21 @@ export default {
       return generateProductJsonResponse(product, url);
     }
 
-    // 6. Detect Search Engine Bots & Social Media Scrapers
+    // 6. Detect Search Engine Bots, Google Inspection Tools & Social Media Scrapers
     const userAgent = (request.headers.get("User-Agent") || "").toLowerCase();
-    const isBot = /whatsapp|facebookexternalhit|twitterbot|linkedinbot|slackbot|discordbot|telegrambot|applebot|googlebot|bingbot|yandex|duckduckbot|skypeuripreview|pinterest|baiduspider/.test(
+    const isBot = /google|inspection|whatsapp|facebook|twitter|linkedin|slack|discord|telegram|apple|bing|yandex|duckduck|pinterest|crawler|spider|bot|lighthouse/i.test(
       userAgent
     );
 
-    // If bot requesting a product:
-    if (isBot && productId) {
+    // If requesting a product:
+    if (productId) {
       const product = await fetchProductFromSupabase(productId, env);
       if (product) {
-        return generateProductHtmlResponse(product, url);
+        if (isBot) {
+          return generateProductHtmlResponse(product, url);
+        }
+        // For browsers and headless testing tools, inject structured data directly into the SPA shell
+        return fetchFromWebAppWithMetadata(request, env, url, product);
       }
     }
 
@@ -174,6 +178,80 @@ async function fetchFromWebApp(request, env, url) {
     status: response.status === 404 ? 200 : response.status,
     statusText: response.status === 404 ? "OK" : response.statusText,
     headers: response.headers,
+  });
+}
+
+/**
+ * Proxy browser visits while injecting Schema.org JSON-LD and meta tags into SPA shell
+ */
+async function fetchFromWebAppWithMetadata(request, env, url, product) {
+  let response = await fetch(request);
+  if (response.status === 404) {
+    const rootUrl = new URL(url.toString());
+    rootUrl.pathname = "/";
+    response = await fetch(rootUrl.toString(), {
+      method: request.method,
+      headers: request.headers,
+    });
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/html")) {
+    return response;
+  }
+
+  let html = await response.text();
+  const name = product.name || "Wholesale Product";
+  const brand = product.brand || "N.O.D.E. Verified";
+  const srp = Number(product.srp) || 0;
+  const imageUrl = product.image_url || (Array.isArray(product.media_urls) && product.media_urls[0]) || APP_ICON_URL;
+  const priceFormatted = srp > 0 ? `UGX ${srp.toLocaleString("en-US")}` : "";
+
+  const jsonLd = {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    name: name,
+    image: [imageUrl],
+    description: product.description || `Wholesale ${name} on N.O.D.E.`,
+    sku: product.sku || `ND-${product.id.slice(0, 8).toUpperCase()}`,
+    brand: {
+      "@type": "Brand",
+      name: brand,
+    },
+    offers: {
+      "@type": "Offer",
+      url: url.toString(),
+      priceCurrency: "UGX",
+      price: srp > 0 ? String(srp) : "0",
+      priceValidUntil: "2027-12-31",
+      itemCondition: "https://schema.org/NewCondition",
+      availability: (product.current_stock ?? 1) > 0 ? "https://schema.org/InStock" : "https://schema.org/PreOrder",
+      seller: {
+        "@type": "Organization",
+        name: product.supplier_name || brand || "N.O.D.E. Wholesale Supplier",
+        logo: APP_ICON_URL,
+      },
+    },
+  };
+
+  const injection = `
+  <title>${escapeHtml(name)} — Wholesale ${priceFormatted} | N.O.D.E.</title>
+  <meta name="description" content="Wholesale ${escapeHtml(name)} for ${priceFormatted} on N.O.D.E.">
+  <meta property="og:title" content="${escapeHtml(name)} — Wholesale ${priceFormatted} | N.O.D.E.">
+  <meta property="og:image" content="${escapeHtml(imageUrl)}">
+  <script type="application/ld+json">
+${JSON.stringify(jsonLd, null, 2)}
+  </script>
+</head>`;
+
+  html = html.replace("</head>", `${injection}`);
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html;charset=UTF-8",
+      "Cache-Control": "public, max-age=3600",
+    },
   });
 }
 
@@ -280,6 +358,7 @@ function generateProductHtmlResponse(product, url) {
       url: url.toString(),
       priceCurrency: "UGX",
       price: srp > 0 ? String(srp) : "0",
+      priceValidUntil: "2027-12-31",
       itemCondition: "https://schema.org/NewCondition",
       availability: (product.current_stock ?? 1) > 0 ? "https://schema.org/InStock" : "https://schema.org/PreOrder",
       seller: {
