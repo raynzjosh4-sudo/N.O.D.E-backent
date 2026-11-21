@@ -2,6 +2,12 @@ name = "node-media-cloude-worker"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
+# Routes (must be defined before [vars] table in TOML)
+routes = [
+  { pattern = "nodemediafiles.crimchart.com/*", zone_name = "crimchart.com" },
+  { pattern = "node.crimchart.com/*", zone_name = "crimchart.com" }
+]
+
 # Connect your Cloudflare R2 bucket
 [[r2_buckets]]
 binding = "NODE_MEDIA_BUCKET"
@@ -14,9 +20,3 @@ SUPABASE_URL = "https://lihoygvdnnfqodjjxqnz.supabase.co"
 SUPABASE_ANON_KEY = "sb_publishable_xknRF_gqAzQqznqNvSONRg_j6GkQdrS"
 BACKEND_SECRET = "node-r2-super-secret-2026"
 WEB_APP_HOST = "node.crimchart.com"
-
-# Routes
-routes = [
-  { pattern = "nodemediafiles.crimchart.com/*", zone_name = "crimchart.com" },
-  { pattern = "node.crimchart.com/*", zone_name = "crimchart.com" }
-]
