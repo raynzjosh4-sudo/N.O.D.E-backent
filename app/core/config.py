@@ -37,28 +37,28 @@ def resend_from_email() -> str:
 
 
 def cors_allowed_origins() -> list[str]:
-    default = "" if is_production() else "*"
+    default = "https://node.crimchart.com,https://raynzjosh4-sudo.github.io,http://localhost:8081" if is_production() else "*"
     origins = [
         origin.strip()
         for origin in os.getenv("CORS_ALLOWED_ORIGINS", default).split(",")
         if origin.strip()
     ]
-    if is_production() and (not origins or "*" in origins):
-        raise RuntimeError(
-            "Set CORS_ALLOWED_ORIGINS to explicit web origins in production."
-        )
+    if "https://node.crimchart.com" not in origins and "*" not in origins:
+        origins.append("https://node.crimchart.com")
     return origins
 
 
 def allowed_hosts() -> list[str]:
-    default = "" if is_production() else "*"
+    default = "node.crimchart.com,n-o-d-e-backent.onrender.com,localhost" if is_production() else "*"
     hosts = [
         host.strip()
         for host in os.getenv("ALLOWED_HOSTS", default).split(",")
         if host.strip()
     ]
-    if is_production() and (not hosts or "*" in hosts):
-        raise RuntimeError("Set ALLOWED_HOSTS to explicit host names in production.")
+    if "node.crimchart.com" not in hosts and "*" not in hosts:
+        hosts.append("node.crimchart.com")
+    if "n-o-d-e-backent.onrender.com" not in hosts and "*" not in hosts:
+        hosts.append("n-o-d-e-backent.onrender.com")
     return hosts
 
 
