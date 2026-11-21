@@ -131,12 +131,7 @@ export default {
       return generateTermsHtmlResponse(url);
     }
 
-    // If bot requesting Homepage or root (/):
-    if (isBot && (url.pathname === "/" || url.pathname === "")) {
-      return generateHomepageHtmlResponse(env, url);
-    }
-
-    // 7. For regular users in web browsers, proxy to the React Native Web SPA
+    // 7. For all regular website pages (/, /explore, /search, /suppliers, etc.), serve the React Native Web SPA directly
     return fetchFromWebApp(request, env, url);
   },
 };
@@ -631,7 +626,7 @@ ${JSON.stringify(jsonLd, null, 2)}
   return new Response(html, {
     headers: {
       "Content-Type": "text/html;charset=UTF-8",
-      "Cache-Control": "public, max-age=3600, s-maxage=86400",
+      "Cache-Control": "no-cache, private",
     },
   });
 }
@@ -794,7 +789,7 @@ ${JSON.stringify(jsonLd, null, 2)}
   return new Response(html, {
     headers: {
       "Content-Type": "text/html;charset=UTF-8",
-      "Cache-Control": "public, max-age=3600, s-maxage=86400",
+      "Cache-Control": "no-cache, private",
     },
   });
 }
