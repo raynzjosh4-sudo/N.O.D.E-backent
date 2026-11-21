@@ -49,7 +49,7 @@ def cors_allowed_origins() -> list[str]:
 
 
 def allowed_hosts() -> list[str]:
-    default = "node.crimchart.com,n-o-d-e-backent.onrender.com,localhost" if is_production() else "*"
+    default = "node.crimchart.com,api.node.crimchart.com,n-o-d-e-backent.onrender.com,localhost" if is_production() else "*"
     hosts = [
         host.strip()
         for host in os.getenv("ALLOWED_HOSTS", default).split(",")
@@ -57,6 +57,8 @@ def allowed_hosts() -> list[str]:
     ]
     if "node.crimchart.com" not in hosts and "*" not in hosts:
         hosts.append("node.crimchart.com")
+    if "api.node.crimchart.com" not in hosts and "*" not in hosts:
+        hosts.append("api.node.crimchart.com")
     if "n-o-d-e-backent.onrender.com" not in hosts and "*" not in hosts:
         hosts.append("n-o-d-e-backent.onrender.com")
     return hosts
