@@ -1,0 +1,14 @@
+name = "node-product-seo-worker"
+main = "product_seo_worker.js"
+compatibility_date = "2024-01-01"
+
+# Set secrets via Cloudflare Dashboard or Wrangler:
+#   npx wrangler secret put SUPABASE_URL
+#   npx wrangler secret put SUPABASE_ANON_KEY
+[vars]
+WEB_APP_HOST = "node.crimchart.com"
+
+# Routes configuration:
+# routes = [
+#   { pattern = "node.crimchart.com/*", zone_name = "crimchart.com" }
+# ]
