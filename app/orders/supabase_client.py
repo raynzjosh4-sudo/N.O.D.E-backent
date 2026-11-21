@@ -224,9 +224,15 @@ async def upsert_draft_order(data: dict[str, Any], user_id: str) -> dict:
     Save or upsert a draft order.
     Targets `draft_orders` table (id, user_id, entries_json, status, last_modified).
     """
-    user_row = await ensure_user_exists(user_id)
-    resolved_user_id = user_row["id"]
+    resolved_user_id = user_id
+    try:
+        user_row = await ensure_user_exists(user_id)
+        if user_row and user_row.get("id"):
+            resolved_user_id = user_row["id"]
+    except Exception as e:
+        logger.warning(f"Could not ensure user exists for draft: {e}")
 
+    resolved_user_id = _to_uuid(resolved_user_id)
     draft_id = _to_uuid(data.get("id") or data.get("order_id"))
     now = datetime.now(timezone.utc).isoformat()
 
