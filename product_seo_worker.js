@@ -14,6 +14,12 @@
 const WEB_APP_HOST = "node.crimchart.com";
 const FALLBACK_IMAGE = "https://node.crimchart.com/favicon.ico";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -32,11 +38,15 @@ export default {
     }
 
     // 3. Match Product URL Patterns:
-    // /product/:id, /product/specs/:id, /product/order/:id
+    // /product/:id, /product/specs/:id, /product/order/:id, /api/share/product/:id
     const pathParts = url.pathname.split("/").filter(Boolean);
     let productId = null;
+    let isApiShareRequest = false;
 
-    if (pathParts[0] === "product" && pathParts.length >= 2) {
+    if (pathParts[0] === "api" && pathParts[1] === "share" && pathParts[2] === "product" && pathParts[3]) {
+      productId = pathParts[3];
+      isApiShareRequest = true;
+    } else if (pathParts[0] === "product" && pathParts.length >= 2) {
       if (pathParts[1] === "specs" || pathParts[1] === "order") {
         productId = pathParts[2];
       } else {
@@ -47,6 +57,15 @@ export default {
     // If not a product route or missing ID, forward to GitHub Pages
     if (!productId) {
       return fetchFromWebApp(request, env, url);
+    }
+
+    // If called as an API endpoint or format=json requested:
+    if (isApiShareRequest || url.searchParams.get("format") === "json") {
+      const product = await fetchProductFromSupabase(productId, env);
+      if (!product) {
+        return Response.json({ error: "Product not found" }, { status: 404, headers: corsHeaders });
+      }
+      return generateProductJsonResponse(product, url);
     }
 
     // 4. Detect Search Engine Bots & Social Media Scrapers
@@ -113,6 +132,38 @@ async function fetchProductFromSupabase(productId, env) {
     console.error("Error fetching product from Supabase:", err);
   }
   return null;
+}
+
+/**
+ * Return JSON share metadata for apps
+ */
+function generateProductJsonResponse(product, url) {
+  const name = product.name || "Wholesale Product";
+  const brand = product.brand || "";
+  const srp = Number(product.srp) || 0;
+  const priceFormatted = srp > 0 ? `UGX ${srp.toLocaleString("en-US")}` : "";
+  const imageUrl = product.image_url || (Array.isArray(product.media_urls) && product.media_urls[0]) || FALLBACK_IMAGE;
+  const warehouse = product.warehouse_loc || "Kampala, Uganda";
+  const shareUrl = `https://${WEB_APP_HOST}/product/specs/${product.id}`;
+  const shareText = `Check out ${name} on N.O.D.E Wholesale for ${priceFormatted}!\n${shareUrl}`;
+
+  return Response.json(
+    {
+      id: product.id,
+      name,
+      brand,
+      price: srp,
+      currency: "UGX",
+      priceFormatted,
+      imageUrl,
+      warehouse,
+      moq: product.moq || 1,
+      shareUrl,
+      whatsappUrl: `https://wa.me/?text=${encodeURIComponent(shareText)}`,
+      shareText,
+    },
+    { headers: corsHeaders }
+  );
 }
 
 /**
