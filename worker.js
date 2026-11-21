@@ -1,12 +1,12 @@
 /**
- * NODE Media Pipeline Worker
- * Cloudflare Edge Worker for R2 media uploads and image serving.
- * 
- * Supports both:
- * 1. Direct mobile Flutter uploads via Supabase user JWT.
- * 2. FastAPI backend uploads via X-Backend-Secret.
- * Version: 1.0.1
+ * NODE Unified Edge Worker
+ * Cloudflare Edge Worker for:
+ * 1. R2 media uploads and image serving (nodemediafiles.crimchart.com).
+ * 2. Product SEO, WhatsApp link previews, and /sitemap.xml (node.crimchart.com).
+ * Version: 2.0.0
  */
+
+import productSeoWorker from "./product_seo_worker.js";
 
 const MEDIA_API_PATH = "/_node/media";
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024; // 12 MB max
@@ -175,25 +175,40 @@ async function handleMediaRequest(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    // 1. If it's on node.crimchart.com OR a product/sitemap/robots path:
+    if (
+      url.hostname === "node.crimchart.com" ||
+      url.pathname.startsWith("/product") ||
+      url.pathname === "/sitemap.xml" ||
+      url.pathname === "/robots.txt"
+    ) {
+      return productSeoWorker.fetch(request, env, ctx);
+    }
+
+    // 2. Media API upload/delete
     if (url.pathname === MEDIA_API_PATH) {
       return handleMediaRequest(request, env);
     }
 
-    // Serve object directly from R2 bucket (no public access needed)
+    // 3. Serve object directly from R2 bucket (no public access needed)
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("Method Not Allowed", { status: 405 });
     }
     const key = url.pathname.replace(/^\//, "");
     if (!key) return new Response("Not Found", { status: 404 });
-    const object = await env.NODE_MEDIA_BUCKET.get(key);
-    if (!object) return new Response("Not Found", { status: 404 });
-    const headers = new Headers();
-    headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
-    headers.set("Cache-Control", "public, max-age=31536000, immutable");
-    headers.set("Access-Control-Allow-Origin", "*");
-    return new Response(object.body, { headers });
+    if (env.NODE_MEDIA_BUCKET) {
+      const object = await env.NODE_MEDIA_BUCKET.get(key);
+      if (object) {
+        const headers = new Headers();
+        headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+        headers.set("Cache-Control", "public, max-age=31536000, immutable");
+        headers.set("Access-Control-Allow-Origin", "*");
+        return new Response(object.body, { headers });
+      }
+    }
+    return new Response("Not Found", { status: 404 });
   },
 };
