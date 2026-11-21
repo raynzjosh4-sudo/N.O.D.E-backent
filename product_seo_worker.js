@@ -108,9 +108,9 @@ export default {
       return generateProductJsonResponse(product, url);
     }
 
-    // 6. Detect Search Engine Bots, Google Inspection Tools & Social Media Scrapers
+    // 6. Detect Search Engine Crawlers & Social Scrapers ONLY (exclude standard desktop/mobile browsers like Chrome/Safari/Edge)
     const userAgent = (request.headers.get("User-Agent") || "").toLowerCase();
-    const isBot = /google|inspection|whatsapp|facebook|twitter|linkedin|slack|discord|telegram|apple|bing|yandex|duckduck|pinterest|crawler|spider|bot|lighthouse/i.test(
+    const isBot = /googlebot|google-inspectiontool|mediapartners-google|feedfetcher-google|bingbot|yandex|duckduckbot|baiduspider|whatsapp|facebookexternalhit|twitterbot|linkedinbot|slackbot|discordbot|telegrambot|applebot|pinterest|crawler|spider|lighthouse/i.test(
       userAgent
     );
 
