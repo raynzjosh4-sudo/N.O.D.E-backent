@@ -4,6 +4,7 @@ from app.authentication.email_auth.endpoints.delete_account import router as del
 from app.authentication.email_auth.endpoints.delete_pending_account import (
     router as delete_pending_account,
 )
+from app.authentication.email_auth.endpoints.google import router as google_auth
 from app.authentication.email_auth.endpoints.me import router as me
 from app.authentication.email_auth.endpoints.request_password_reset import (
     router as request_password_reset,
@@ -27,4 +28,5 @@ router.include_router(request_password_reset)
 router.include_router(update_password)
 router.include_router(delete_pending_account)
 router.include_router(delete_account)
+router.include_router(google_auth)
 router.include_router(me)
