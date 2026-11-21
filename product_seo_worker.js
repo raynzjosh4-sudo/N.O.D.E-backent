@@ -194,7 +194,7 @@ async function fetchProductFromSupabase(productId, env) {
   };
 
   try {
-    const endpoint = `${supabaseUrl}/rest/v1/products?id=eq.${encodeURIComponent(productId)}&select=*`;
+    const endpoint = `${supabaseUrl}/rest/v1/products_table?id=eq.${encodeURIComponent(productId)}&select=*`;
     const res = await fetch(endpoint, { headers });
     if (!res.ok) return null;
     const data = await res.json();
@@ -626,31 +626,85 @@ async function generateFullSitemap(request, env, url) {
     };
 
     try {
-      const endpoint = `${supabaseUrl}/rest/v1/products?select=id,name,brand,srp,image_url,media_urls,updated_at,created_at&order=created_at.desc&limit=2000`;
-      const res = await fetch(endpoint, { headers });
-
-      if (res.ok) {
-        const products = await res.json();
+      // 1. Fetch all wholesale products
+      const pRes = await fetch(`${supabaseUrl}/rest/v1/products_table?select=id,name,brand,srp,image_url,media_urls,updated_at,created_at&order=created_at.desc&limit=2000`, { headers });
+      if (pRes.ok) {
+        const products = await pRes.json();
         for (const p of products) {
           const lastMod = (p.updated_at || p.created_at || new Date().toISOString()).split("T")[0];
           const img = p.image_url || (Array.isArray(p.media_urls) && p.media_urls[0]);
           const brandText = p.brand ? ` - ${escapeXml(p.brand)}` : "";
+          const priceText = p.srp > 0 ? `Wholesale UGX ${Number(p.srp).toLocaleString("en-US")}` : "Wholesale Direct";
 
+          // Specs URL
           xml += `
   <url>
     <loc>https://${WEB_APP_HOST}/product/specs/${p.id}</loc>
     <lastmod>${lastMod}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>${
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>${
       img
         ? `
     <image:image>
       <image:loc>${escapeXml(img)}</image:loc>
       <image:title>${escapeXml(p.name || "Wholesale Product")}</image:title>
-      <image:caption>Wholesale price UGX ${Number(p.srp || 0).toLocaleString("en-US")}${brandText}</image:caption>
+      <image:caption>${priceText}${brandText}</image:caption>
     </image:image>`
         : ""
     }
+  </url>`;
+
+          // Canonical Product URL
+          xml += `
+  <url>
+    <loc>https://${WEB_APP_HOST}/product/${p.id}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+        }
+      }
+
+      // 2. Fetch wholesale categories
+      const cRes = await fetch(`${supabaseUrl}/rest/v1/categories_table?select=id,name,image_url,updated_at&limit=200`, { headers });
+      if (cRes.ok) {
+        const categories = await cRes.json();
+        for (const c of categories) {
+          const lastMod = (c.updated_at || new Date().toISOString()).split("T")[0];
+          xml += `
+  <url>
+    <loc>https://${WEB_APP_HOST}/explore?category=${encodeURIComponent(c.id)}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+    <image:image>
+      <image:loc>${APP_ICON_URL}</image:loc>
+      <image:title>${escapeXml(c.name || "Category")} Wholesale</image:title>
+      <image:caption>Explore wholesale lots and verified suppliers for ${escapeXml(c.name || "category")}</image:caption>
+    </image:image>
+  </url>`;
+        }
+      }
+
+      // 3. Fetch verified wholesale suppliers
+      const sRes = await fetch(`${supabaseUrl}/rest/v1/business_table?select=user_id,legal_name,city,region,logo_url,updated_at&limit=200`, { headers });
+      if (sRes.ok) {
+        const suppliers = await sRes.json();
+        for (const s of suppliers) {
+          const lastMod = (s.updated_at || new Date().toISOString()).split("T")[0];
+          const supplierImg = s.logo_url || APP_ICON_URL;
+          const locText = s.city ? ` in ${s.city}, ${s.region || "Uganda"}` : " in Kampala, Uganda";
+          xml += `
+  <url>
+    <loc>https://${WEB_APP_HOST}/suppliers?id=${encodeURIComponent(s.user_id)}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+    <image:image>
+      <image:loc>${escapeXml(supplierImg)}</image:loc>
+      <image:title>${escapeXml(s.legal_name || "Verified Wholesale Supplier")}</image:title>
+      <image:caption>Verified B2B Supplier${escapeXml(locText)} on N.O.D.E.</image:caption>
+    </image:image>
   </url>`;
         }
       }
