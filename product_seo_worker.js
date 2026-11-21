@@ -56,6 +56,14 @@ export default {
       });
     }
 
+    // 3b. Google Search Console HTML File Verification
+    if (/^\/google[a-z0-9]+\.html$/i.test(url.pathname)) {
+      const token = url.pathname.replace(/^\/google/, "").replace(/\.html$/, "");
+      return new Response(`google-site-verification: google${token}.html`, {
+        headers: { "Content-Type": "text/html;charset=UTF-8" },
+      });
+    }
+
     // 4. App Info API Endpoint (/api/share/app)
     if (url.pathname === "/api/share/app") {
       return Response.json(
@@ -291,6 +299,7 @@ function generateProductHtmlResponse(product, url) {
   
   <meta name="title" content="${escapeHtml(metaTitle)}">
   <meta name="description" content="${escapeHtml(metaDescription)}">
+  <meta name="google-site-verification" content="uteCDPNtn4l-xAMk1xTZ1qOP8zDoABq96chhXfdMqKc">
   <link rel="canonical" href="${escapeHtml(url.toString())}">
   <link rel="icon" type="image/png" href="${APP_ICON_URL}">
   <link rel="apple-touch-icon" href="${APP_ICON_URL}">
@@ -416,6 +425,7 @@ async function generateHomepageHtmlResponse(env, url) {
   
   <meta name="title" content="${escapeHtml(metaTitle)}">
   <meta name="description" content="${escapeHtml(metaDesc)}">
+  <meta name="google-site-verification" content="uteCDPNtn4l-xAMk1xTZ1qOP8zDoABq96chhXfdMqKc">
   <meta name="keywords" content="NODE, N.O.D.E., NODE Wholesale, National Online Distribution and Enterprise, wholesale Uganda, Kampala wholesale, bulk buying, B2B wholesale marketplace, verified suppliers, wholesale prices, trading terms">
   <link rel="canonical" href="https://${WEB_APP_HOST}/">
   <link rel="icon" type="image/png" href="${APP_ICON_URL}">
