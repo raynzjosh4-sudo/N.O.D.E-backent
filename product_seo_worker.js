@@ -791,7 +791,7 @@ async function generateFullSitemap(request, env, url) {
 
     try {
       // 1. Fetch all wholesale products
-      const pRes = await fetch(`${supabaseUrl}/rest/v1/products_table?select=id,name,brand,srp,price_tiers,moq,image_url,media_urls,updated_at,created_at&order=created_at.desc&limit=2000`, { headers });
+      const pRes = await fetch(`${supabaseUrl}/rest/v1/products_table?select=id,name,brand,srp,price_tiers,trading_terms,image_url,media_urls,updated_at,created_at&order=created_at.desc&limit=2000`, { headers });
       if (pRes.ok) {
         const products = await pRes.json();
         for (const p of products) {
@@ -823,6 +823,15 @@ async function generateFullSitemap(request, env, url) {
           xml += `
   <url>
     <loc>https://${WEB_APP_HOST}/product/${p.id}</loc>
+    <lastmod>${lastMod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`;
+
+          // Product Order URL
+          xml += `
+  <url>
+    <loc>https://${WEB_APP_HOST}/product/order/${p.id}</loc>
     <lastmod>${lastMod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
