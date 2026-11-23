@@ -134,10 +134,10 @@ def r2_public_url() -> str:
 
 def cloudflare_media_endpoint() -> str:
     """Cloudflare media upload worker endpoint."""
-    return os.getenv(
-        "CLOUDFLARE_MEDIA_ENDPOINT",
-        "https://nodemediafiles.crimchart.com/_node/media",
-    ).strip()
+    val = os.getenv("CLOUDFLARE_MEDIA_ENDPOINT", "").strip()
+    if not val or "workers.dev" in val:
+        return "https://nodemediafiles.crimchart.com/_node/media"
+    return val
 
 
 def backend_base_url() -> str:

@@ -127,17 +127,23 @@ async def upload_to_cloudflare(
     endpoint = get_cloudflare_media_url()
     # Prefer the user's own session token; anon key causes 401 on the Cloudflare worker
     auth_token = token or supabase_anon_key()
-    backend_secret = os.getenv("CLOUDFLARE_WORKER_SECRET", "node-r2-super-secret-2026")
+    backend_secret = (
+        os.getenv("BACKEND_SECRET")
+        or os.getenv("CLOUDFLARE_WORKER_SECRET")
+        or "node-r2-super-secret-2026"
+    )
 
     headers = {
         "User-Agent": "NODE-Backend/1.0 (CloudflareMediaClient)",
         "Authorization": f"Bearer {auth_token}",
         "X-Backend-Secret": backend_secret,
+        "X-User-Id": "1a47f0fe-3f4d-487f-95b5-1f7cfe27b7b7",
         "Content-Type": content_type or "application/octet-stream",
         "Content-Length": str(len(file_bytes)),
         "X-Node-Folder": folder,
     }
 
+    cf_error_detail = None
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
             resp = await client.post(endpoint, headers=headers, content=file_bytes)
@@ -145,11 +151,14 @@ async def upload_to_cloudflare(
                 data = resp.json()
                 if isinstance(data, dict) and data.get("url"):
                     return data["url"]
-                print(f"[CloudMediaService] Cloudflare upload returned no public URL: {resp.text}")
+                cf_error_detail = f"Cloudflare upload returned no public URL: {resp.text}"
+                print(f"[CloudMediaService] {cf_error_detail}")
             else:
-                print(f"[CloudMediaService] Cloudflare upload returned HTTP {resp.status_code}: {resp.text}")
+                cf_error_detail = f"Cloudflare {endpoint} returned HTTP {resp.status_code}: {resp.text}"
+                print(f"[CloudMediaService] {cf_error_detail}")
     except Exception as exc:
-        print(f"⚠️ [CloudMediaService] Cloudflare R2 upload attempt failed: {exc}")
+        cf_error_detail = f"Cloudflare R2 connection error: {exc}"
+        print(f"⚠️ [CloudMediaService] {cf_error_detail}")
 
     # Fallback 1: Supabase Storage
     sb_url, sb_key = supabase_admin_config()
@@ -171,7 +180,8 @@ async def upload_to_cloudflare(
             print(f"⚠️ [CloudMediaService] Supabase storage upload attempt failed: {sb_exc}")
 
     # Never fall back to Render local disk: persistent cloud storage is required.
+    error_msg = f"Image upload to persistent cloud storage (Cloudflare R2) failed. {cf_error_detail or ''} Ephemeral storage is disabled; no persistent image was saved."
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail="Image upload to persistent cloud storage (Cloudflare R2) failed. Ephemeral storage is disabled; no persistent image was saved.",
+        detail=error_msg.strip(),
     )
