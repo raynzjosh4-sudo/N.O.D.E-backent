@@ -134,6 +134,7 @@ async def upload_to_cloudflare(
         "Authorization": f"Bearer {auth_token}",
         "X-Backend-Secret": backend_secret,
         "Content-Type": content_type or "application/octet-stream",
+        "Content-Length": str(len(file_bytes)),
         "X-Node-Folder": folder,
     }
 
@@ -172,5 +173,5 @@ async def upload_to_cloudflare(
     # Never fall back to Render local disk: persistent cloud storage is required.
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail="Image upload to persistent cloud storage (Cloudflare R2) failed. Ephemeral storage is disabled.",
+        detail="Image upload to persistent cloud storage (Cloudflare R2) failed. Ephemeral storage is disabled; no persistent image was saved.",
     )

@@ -136,7 +136,7 @@ def cloudflare_media_endpoint() -> str:
     """Cloudflare media upload worker endpoint."""
     return os.getenv(
         "CLOUDFLARE_MEDIA_ENDPOINT",
-        "https://node-media-cloude-worker.ns8011788.workers.dev/_node/media",
+        "https://nodemediafiles.crimchart.com/_node/media",
     ).strip()
 
 

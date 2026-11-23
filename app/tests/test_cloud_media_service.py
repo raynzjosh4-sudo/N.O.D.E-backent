@@ -9,6 +9,10 @@ from app.services import cloud_media_service
 class FakeResponse:
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
+        self.text = ""
+
+    def json(self):
+        return {}
 
 
 class FakeAsyncClient:
