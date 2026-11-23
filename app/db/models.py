@@ -54,3 +54,20 @@ class EmailImage(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class SupplierCustomer(Base):
+    """
+    Links wholesale buyers with suppliers they have ordered from.
+    Used to broadcast email updates when a supplier publishes new products.
+    """
+    __tablename__ = "supplier_customers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    supplier_id = Column(String(64), index=True, nullable=False)
+    buyer_user_id = Column(String(64), index=True, nullable=False)
+    buyer_email = Column(String(254), index=True, nullable=False)
+    buyer_name = Column(String(255), nullable=True)
+    last_order_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+

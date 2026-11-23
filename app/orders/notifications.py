@@ -235,3 +235,37 @@ async def _dispatch_order_status_notifications(
             metadata={"order_id": order_id, "status": new_status},
         )
 
+    # 4. Link supplier with buyer who placed the order for future product broadcast updates
+    if supplier_id and buyer_email:
+        try:
+            from app.db.session import SessionLocal
+            from app.db.models import SupplierCustomer
+            with SessionLocal() as db_session:
+                existing_link = (
+                    db_session.query(SupplierCustomer)
+                    .filter(
+                        SupplierCustomer.supplier_id == str(supplier_id),
+                        SupplierCustomer.buyer_email == str(buyer_email).strip().lower(),
+                    )
+                    .first()
+                )
+                if existing_link:
+                    existing_link.last_order_id = str(order_id)
+                    if buyer_name and not existing_link.buyer_name:
+                        existing_link.buyer_name = buyer_name
+                    db_session.commit()
+                else:
+                    new_link = SupplierCustomer(
+                        supplier_id=str(supplier_id),
+                        buyer_user_id=str(buyer_id or action_by_user_id or ""),
+                        buyer_email=str(buyer_email).strip().lower(),
+                        buyer_name=buyer_name,
+                        last_order_id=str(order_id),
+                    )
+                    db_session.add(new_link)
+                    db_session.commit()
+            logger.info(f"Recorded buyer-supplier link: {buyer_email} -> {supplier_id}")
+        except Exception as link_err:
+            logger.warning(f"Failed to record buyer-supplier customer link: {link_err}")
+
+

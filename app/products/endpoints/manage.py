@@ -1,12 +1,15 @@
 """
 Product publishing, updating, and management endpoints for suppliers and admins.
 """
+import logging
 import re
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.core.deps import require_supplier_or_admin
+from app.db.models import SupplierCustomer
+from app.db.session import SessionLocal
 from app.products.helpers import (
     _build_product_response,
     _resolve_category_id,
@@ -28,8 +31,127 @@ from app.products.supabase_client import (
     update_product,
 )
 from app.services.cloud_media_service import decode_base64_image, upload_to_cloudflare
+from app.services.email_service import create_in_app_notification, send_order_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _broadcast_new_product_to_customers(
+    supplier_id: str,
+    supplier_name: str,
+    product_id: str,
+    product_name: str,
+    brand: str,
+    image_url: str,
+    srp: float,
+):
+    """
+    Broadcasts email and in-app notifications to all buyers who have previously ordered
+    from this supplier when a new product is published.
+    """
+    try:
+        customers = []
+        with SessionLocal() as db_session:
+            records = (
+                db_session.query(SupplierCustomer)
+                .filter(SupplierCustomer.supplier_id == str(supplier_id))
+                .all()
+            )
+            # Deduplicate by buyer_email
+            seen_emails = set()
+            for r in records:
+                if r.buyer_email and r.buyer_email.lower() not in seen_emails:
+                    seen_emails.add(r.buyer_email.lower())
+                    customers.append({
+                        "email": r.buyer_email.lower(),
+                        "name": r.buyer_name or "Valued Wholesale Buyer",
+                        "user_id": r.buyer_user_id,
+                    })
+
+        if not customers:
+            return
+
+        formatted_price = f"UGX {srp:,.0f}" if srp else "Wholesale Tier Pricing Available"
+        specs_link = f"https://node.crimchart.com/product-specs?id={product_id}"
+
+        for c in customers:
+            buyer_name = c["name"]
+            recipient_email = c["email"]
+            buyer_user_id = c["user_id"]
+
+            html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>New Product Arrival</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0D1117; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #E6EDF3;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding: 24px 12px; background-color: #0D1117;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #161B22; border: 1px solid #30363D; border-radius: 12px; overflow: hidden;">
+          <tr>
+            <td style="padding: 20px 24px; border-bottom: 1px solid #30363D; background-color: #0D1117;">
+              <span style="font-weight: 800; font-size: 18px; color: #58A6FF; letter-spacing: 1px;">N.O.D.E. WHOLESALE</span>
+            </td>
+          </tr>
+          {f'<tr><td align="center" style="padding: 0; background: #000;"><img src="{image_url}" alt="{product_name}" style="max-width: 100%; max-height: 320px; object-fit: contain; display: block;" /></td></tr>' if image_url else ''}
+          <tr>
+            <td style="padding: 28px 24px;">
+              <div style="display: inline-block; padding: 4px 10px; background: rgba(56, 139, 253, 0.15); border: 1px solid #388BFD; border-radius: 16px; font-size: 12px; font-weight: 600; color: #58A6FF; margin-bottom: 12px;">
+                NEW WHOLESALE CATALOG UPDATE
+              </div>
+              <h2 style="margin: 0 0 10px 0; font-size: 20px; color: #FFFFFF;">{product_name}</h2>
+              <p style="margin: 0 0 16px 0; color: #8B949E; font-size: 14px;">
+                Supplier <strong>{supplier_name}</strong> (who you have previously ordered from) has just published a new wholesale listing.
+              </p>
+              <div style="background-color: #0D1117; border: 1px solid #21262D; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+                <p style="margin: 0 0 6px 0; font-size: 13px; color: #8B949E;">Brand: <strong style="color: #E6EDF3;">{brand or 'Verified Brand'}</strong></p>
+                <p style="margin: 0; font-size: 15px; color: #3FB950; font-weight: 700;">Starting Price: {formatted_price}</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="{specs_link}" target="_blank" style="display: inline-block; padding: 14px 28px; background-color: #238636; color: #FFFFFF; font-weight: 600; font-size: 15px; text-decoration: none; border-radius: 6px;">
+                      View Specs & Place Order
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 24px; border-top: 1px solid #21262D; text-align: center; color: #6E7681; font-size: 12px;">
+              You received this wholesale notification because you previously placed an order with {supplier_name} on N.O.D.E.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+            await send_order_email(
+                recipient=recipient_email,
+                subject=f"📦 New Arrival from {supplier_name}: {product_name}",
+                html_content=html_content,
+            )
+
+            if buyer_user_id:
+                await create_in_app_notification(
+                    user_id=buyer_user_id,
+                    title=f"New Arrival: {product_name}",
+                    body=f"{supplier_name} published a new wholesale listing. Tap to view specifications.",
+                    category="product",
+                    metadata={"product_id": product_id},
+                )
+        logger.info(f"Broadcasted new product {product_id} to {len(customers)} buyers for supplier {supplier_id}")
+    except Exception as e:
+        logger.warning(f"Error broadcasting new product to customers: {e}")
+
 
 
 @router.get("/my-products", response_model=PaginatedProducts, summary="List supplier's own posted products")
@@ -64,6 +186,7 @@ async def list_my_products(
 @router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED, summary="Post/Publish a new product")
 async def create_new_product(
     payload: ProductCreateRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(require_supplier_or_admin),
 ):
     """Post a new product to the global catalog."""
@@ -134,6 +257,20 @@ async def create_new_product(
     }
 
     inserted = await insert_product(product_data)
+
+    # Broadcast new product update to all buyers who previously placed an order with this supplier
+    supplier_name = current_user.get("full_name") or current_user.get("email") or "Wholesale Supplier"
+    background_tasks.add_task(
+        _broadcast_new_product_to_customers,
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
+        product_id=product_id,
+        product_name=payload.name,
+        brand=payload.brand or "",
+        image_url=image_url,
+        srp=float(payload.srp or 0.0),
+    )
+
     row = await fetch_product_by_id(product_id) or inserted
     return _build_product_response(row)
 
