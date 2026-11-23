@@ -169,10 +169,23 @@ async function fetchFromWebApp(request, env, url) {
       headers: request.headers,
     });
   }
+  const headers = new Headers(response.headers);
+  if (
+    url.pathname === "/" ||
+    url.pathname === "/index.html" ||
+    url.pathname === "/version.json" ||
+    url.pathname === "/404.html" ||
+    headers.get("content-type")?.includes("text/html")
+  ) {
+    headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    headers.set("Pragma", "no-cache");
+    headers.set("Expires", "0");
+  }
+
   return new Response(response.body, {
     status: response.status === 404 ? 200 : response.status,
     statusText: response.status === 404 ? "OK" : response.statusText,
-    headers: response.headers,
+    headers,
   });
 }
 
