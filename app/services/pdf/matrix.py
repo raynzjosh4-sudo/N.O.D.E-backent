@@ -29,11 +29,13 @@ def build_entry_flowables(
     total_units = int(entry.get("totalUnits") or entry.get("quantity") or 1)
 
     price_tiers = product.get("price_tiers") or []
-    unit_price = float(product.get("srp") or 0.0)
-    for t in sorted(price_tiers, key=lambda x: x.get("minQuantity", 0), reverse=True):
-        if total_units >= t.get("minQuantity", 0):
-            unit_price = float(t.get("price", unit_price))
-            break
+    unit_price = float(entry.get("unit_price") or 0.0)
+    if unit_price <= 0.0:
+        unit_price = float(product.get("srp") or 0.0)
+        for t in sorted(price_tiers, key=lambda x: x.get("minQuantity", 0), reverse=True):
+            if total_units >= t.get("minQuantity", 0):
+                unit_price = float(t.get("price", unit_price))
+                break
 
     entry_total = unit_price * total_units
     flowables = []
@@ -118,6 +120,13 @@ def build_entry_flowables(
 
     # 3. Matrix Data Table
     groups = entry.get("confirmedGroups") or []
+    if not groups:
+        sq = entry.get("size_quantities") or entry.get("sizeQtys") or {}
+        if sq:
+            color_label = entry.get("color") or "Standard"
+            color_hex = entry.get("colorHex") or "#12BBF0"
+            groups = [{"color": {"label": color_label, "color": color_hex}, "sizeQtys": sq}]
+
     all_sizes_set = set()
     for g in groups:
         for sz in (g.get("sizeQtys") or {}).keys():
