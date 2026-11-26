@@ -26,7 +26,27 @@ def build_entry_flowables(
     prod_name = (product.get("name") or entry.get("name") or "Wholesale Item").upper()
     prod_brand = (product.get("brand") or "N.O.D.E.").upper()
     prod_sku = product.get("sku") or "SKU-N/A"
-    total_units = int(entry.get("totalUnits") or entry.get("quantity") or 1)
+
+    # Normalize color/size groups first so total_units always reflects real quantities
+    groups = entry.get("confirmedGroups") or []
+    if not groups:
+        sq = entry.get("size_quantities") or entry.get("sizeQtys") or {}
+        if sq:
+            color_label = entry.get("color") or "Standard"
+            color_hex = entry.get("colorHex") or "#12BBF0"
+            groups = [{"color": {"label": color_label, "color": color_hex}, "sizeQtys": sq}]
+
+    computed_group_units = sum(
+        sum(int(v or 0) for v in (g.get("sizeQtys") or g.get("size_quantities") or {}).values())
+        for g in groups
+    )
+    total_units = int(
+        entry.get("totalUnits")
+        or entry.get("total_units")
+        or entry.get("quantity")
+        or computed_group_units
+        or 1
+    )
 
     price_tiers = product.get("price_tiers") or []
     unit_price = float(entry.get("unit_price") or 0.0)
@@ -119,17 +139,10 @@ def build_entry_flowables(
     flowables.append(specs_table)
 
     # 3. Matrix Data Table
-    groups = entry.get("confirmedGroups") or []
-    if not groups:
-        sq = entry.get("size_quantities") or entry.get("sizeQtys") or {}
-        if sq:
-            color_label = entry.get("color") or "Standard"
-            color_hex = entry.get("colorHex") or "#12BBF0"
-            groups = [{"color": {"label": color_label, "color": color_hex}, "sizeQtys": sq}]
-
     all_sizes_set = set()
     for g in groups:
-        for sz in (g.get("sizeQtys") or {}).keys():
+        sq = g.get("sizeQtys") or g.get("size_quantities") or {}
+        for sz in sq.keys():
             all_sizes_set.add(sz)
     size_list = sorted(list(all_sizes_set)) if all_sizes_set else ["STD"]
 
@@ -141,12 +154,12 @@ def build_entry_flowables(
     matrix_rows = [matrix_header]
     if groups:
         for g in groups:
-            c_label = g.get("color", {}).get("label") or "Standard"
-            sq = g.get("sizeQtys") or {}
+            c_label = (g.get("color") or {}).get("label") or g.get("colorName") or "Standard"
+            sq = g.get("sizeQtys") or g.get("size_quantities") or {}
             row_total = sum(int(v or 0) for v in sq.values())
             row_cells = [Paragraph(f"<font size='7.5' color='#1A1A2E'><b>{c_label}</b></font>", ParagraphStyle("ColorLbl"))]
             for sz in size_list:
-                qty = sq.get(sz, 0)
+                qty = int(sq.get(sz, 0) or 0)
                 qty_str = str(qty) if qty > 0 else "-"
                 q_color = "#1A1A2E" if qty > 0 else "#A1A1AA"
                 row_cells.append(Paragraph(f"<para align='center'><font size='7.5' color='{q_color}'>{qty_str}</font></para>", ParagraphStyle("QC")))

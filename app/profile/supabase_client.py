@@ -50,6 +50,87 @@ def _url(table: str) -> str:
 # ---- users_table helpers ----
 
 
+def _normalize_uuid_str(raw_id: str) -> str:
+    """Normalize a 32-char hex string to hyphenated UUID when valid."""
+    val = (raw_id or "").strip()
+    if not val:
+        return str(uuid.uuid4())
+    try:
+        return str(uuid.UUID(val))
+    except ValueError:
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, val))
+
+
+async def _ensure_auth_user(
+    client: httpx.AsyncClient,
+    target_id: str,
+    email: str,
+    full_name: str,
+) -> str:
+    """
+    Ensure a matching record exists in Supabase `auth.users` before inserting into
+    `public.users_table` (which has FK `users_table_id_fkey -> auth.users(id)`).
+    Returns the confirmed `auth.users.id` UUID string.
+    """
+    auth_headers = {
+        "apikey": _svc_key,
+        "Authorization": f"Bearer {_svc_key}",
+        "Content-Type": "application/json",
+    }
+
+    # 1. Try creating the user in Supabase Auth with our desired UUID
+    try:
+        create_auth_resp = await client.post(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            headers=auth_headers,
+            json={
+                "id": target_id,
+                "email": email,
+                "email_confirm": True,
+                "user_metadata": {"full_name": full_name},
+            },
+        )
+        if create_auth_resp.status_code in (200, 201):
+            body = create_auth_resp.json()
+            resolved = body.get("id") or (body.get("user") or {}).get("id")
+            if resolved:
+                return str(resolved)
+    except Exception as exc:
+        logger.debug(f"_ensure_auth_user create error: {exc}")
+
+    # 2. If email already exists in auth.users (possibly under another UUID), look it up
+    try:
+        link_resp = await client.post(
+            f"{SUPABASE_URL}/auth/v1/admin/generate_link",
+            headers=auth_headers,
+            json={"type": "magiclink", "email": email},
+        )
+        if link_resp.status_code in (200, 201):
+            link_data = link_resp.json()
+            resolved = link_data.get("id") or (link_data.get("user") or {}).get("id")
+            if resolved:
+                return str(resolved)
+    except Exception as exc:
+        logger.debug(f"_ensure_auth_user generate_link lookup error: {exc}")
+
+    # 3. Last resort: filtered list on /auth/v1/admin/users
+    try:
+        list_resp = await client.get(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            headers=auth_headers,
+            params={"page": 1, "per_page": 20, "filter": email},
+        )
+        if list_resp.status_code == 200:
+            users_list = list_resp.json().get("users") or []
+            for u in users_list:
+                if (u.get("email") or "").strip().lower() == email:
+                    return str(u["id"])
+    except Exception as exc:
+        logger.debug(f"_ensure_auth_user list lookup error: {exc}")
+
+    return target_id
+
+
 async def ensure_user_exists(
     user_id: str,
     email: Optional[str] = None,
@@ -59,7 +140,7 @@ async def ensure_user_exists(
     Ensure a user row exists in Supabase users_table.
     Uses the service-role key to bypass RLS on both reads and writes.
     Resolves by local SQLite DB, by user_id first, then by email (handles ID mismatch between auth providers).
-    Auto-creates customer record if not found.
+    Auto-provisions auth.users + users_table record if not found.
     """
     # 0. If email is not passed or empty, resolve email from local SQLite DB using user_id
     resolved_email = (email or "").strip().lower()
@@ -80,7 +161,7 @@ async def ensure_user_exists(
         "Prefer": "resolution=merge-duplicates,return=representation",
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=12.0) as client:
         # 1. Lookup by ID directly
         resp = await client.get(
             _url("users_table"),
@@ -92,21 +173,18 @@ async def ensure_user_exists(
             if rows:
                 return rows[0]
 
-        # 1b. If user_id is a 32-char hex, also lookup by formatted hyphenated UUID
-        if len(user_id) == 32 and "-" not in user_id:
-            try:
-                formatted_uuid = str(uuid.UUID(hex=user_id))
-                resp_uuid = await client.get(
-                    _url("users_table"),
-                    params={"id": f"eq.{formatted_uuid}", "limit": "1"},
-                    headers=SERVICE_HEADERS,
-                )
-                if resp_uuid.status_code == 200:
-                    rows_uuid = resp_uuid.json()
-                    if rows_uuid:
-                        return rows_uuid[0]
-            except Exception:
-                pass
+        # 1b. If user_id is a 32-char hex (or non-standard UUID), lookup by formatted hyphenated UUID
+        formatted_uuid = _normalize_uuid_str(user_id)
+        if formatted_uuid != user_id:
+            resp_uuid = await client.get(
+                _url("users_table"),
+                params={"id": f"eq.{formatted_uuid}", "limit": "1"},
+                headers=SERVICE_HEADERS,
+            )
+            if resp_uuid.status_code == 200:
+                rows_uuid = resp_uuid.json()
+                if rows_uuid:
+                    return rows_uuid[0]
 
         # 2. Lookup by email fallback (handles ID differences across SQLite/auth migrations)
         if resolved_email:
@@ -120,15 +198,20 @@ async def ensure_user_exists(
                 if rows_email:
                     return rows_email[0]
 
-        # 3. Create missing user row using service key (bypasses RLS insert policy)
-        clean_email = (resolved_email or f"user_{user_id[:8]}@example.com").strip().lower()
-        clean_name = (full_name or clean_email.split("@")[0]).strip()
-        target_id = user_id
-        if len(target_id) == 32 and "-" not in target_id:
-            try:
-                target_id = str(uuid.UUID(hex=target_id))
-            except Exception:
-                pass
+        # 3. Ensure backing row exists in auth.users (satisfies users_table_id_fkey), then insert users_table
+        clean_email = (resolved_email or f"user_{formatted_uuid[:8]}@node.local").strip().lower()
+        clean_name = (full_name or clean_email.split("@")[0]).strip() or "Merchant"
+        target_id = await _ensure_auth_user(client, formatted_uuid, clean_email, clean_name)
+
+        # Check again by target_id in case auth.users lookup resolved an existing Supabase user
+        if target_id != formatted_uuid:
+            check_existing = await client.get(
+                _url("users_table"),
+                params={"id": f"eq.{target_id}", "limit": "1"},
+                headers=SERVICE_HEADERS,
+            )
+            if check_existing.status_code == 200 and check_existing.json():
+                return check_existing.json()[0]
 
         payload = {
             "id": target_id,

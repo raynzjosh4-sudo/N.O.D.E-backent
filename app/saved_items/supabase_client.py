@@ -63,12 +63,47 @@ async def upsert_saved_item(
         "selected_size": selected_size,
         "product_snapshot": product_snapshot or {},
     }
-    headers = {
-        **SERVICE_HEADERS,
-        "Prefer": "return=representation,resolution=merge-duplicates",
-    }
+
     async with httpx.AsyncClient(timeout=10.0) as client:
+        # Check if this exact product + color + size variant is already saved; update if so
+        lookup_params: dict[str, Any] = {
+            "user_id": f"eq.{resolved_id}",
+            "product_id": f"eq.{product_id}",
+            "limit": "50",
+        }
+        existing_resp = await client.get(_url(), params=lookup_params, headers=SERVICE_HEADERS)
+        if existing_resp.status_code == 200:
+            for row in existing_resp.json():
+                if (
+                    (row.get("selected_color") or "") == (selected_color or "")
+                    and (row.get("selected_size") or "") == (selected_size or "")
+                ):
+                    patch_resp = await client.patch(
+                        _url(),
+                        params={"id": f"eq.{row['id']}", "user_id": f"eq.{resolved_id}"},
+                        json={
+                            "quantity": quantity,
+                            "product_snapshot": product_snapshot or {},
+                        },
+                        headers={**SERVICE_HEADERS, "Prefer": "return=representation"},
+                    )
+                    if not patch_resp.is_error:
+                        patched = patch_resp.json()
+                        return patched[0] if patched else {**row, "quantity": quantity}
+
+        headers = {
+            **SERVICE_HEADERS,
+            "Prefer": "return=representation",
+        }
         resp = await client.post(_url(), json=payload, headers=headers)
+
+        # Retry once after forcing auth/user sync if users_table wasn't synced under this UUID
+        if resp.is_error and "saved_items_user_id_fkey" in resp.text:
+            user = await ensure_user_exists(user_id, email=email)
+            resolved_id = user["id"]
+            payload["user_id"] = resolved_id
+            resp = await client.post(_url(), json=payload, headers=headers)
+
         if resp.is_error:
             logger.error(f"upsert_saved_item error {resp.status_code}: {resp.text}")
             resp.raise_for_status()

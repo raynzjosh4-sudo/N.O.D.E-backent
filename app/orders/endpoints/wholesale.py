@@ -2,6 +2,7 @@
 Wholesale orders placement, status updates, and PDF download endpoints.
 """
 from datetime import datetime, timezone
+from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 
@@ -86,6 +87,56 @@ async def list_my_orders(
         page=page,
         limit=limit,
         has_more=(page * limit) < total,
+    )
+
+
+@router.post("/pdf/preview", summary="Generate instant PDF spec sheet from raw order data (no auth required)")
+async def preview_order_pdf(body: dict[str, Any]):
+    """
+    Public endpoint — no authentication required.
+    Accepts raw order dict (same shape as OrderCreateRequest) and returns a PDF spec sheet.
+    Useful for generating spec sheets before an order is saved, or for unauthenticated users.
+    """
+    from app.services.pdf_generator import generate_order_pdf as _gen
+
+    # Inject a generated order_id if one isn't supplied
+    if not body.get("order_id"):
+        body["order_id"] = "SPEC-" + datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    if not body.get("created_at"):
+        body["created_at"] = datetime.now(timezone.utc).isoformat()
+
+    buyer_user: dict = body.pop("buyer_user", {}) or {}
+    buyer_business: dict = body.pop("buyer_business", {}) or {}
+    supplier_user: dict = body.pop("supplier_user", {}) or {}
+    supplier_business: dict = body.pop("supplier_business", {}) or {}
+
+    if not buyer_user.get("full_name"):
+        buyer_user["full_name"] = body.get("business_name") or "Guest Wholesale Buyer"
+    if not buyer_business.get("legal_name"):
+        buyer_business["legal_name"] = body.get("business_name") or "Spec Sheet Preview"
+    if not buyer_business.get("city"):
+        buyer_business["city"] = body.get("business_city") or "Kampala"
+    if not buyer_business.get("physical_address"):
+        buyer_business["physical_address"] = body.get("business_address") or "Kampala Wholesale Hub"
+    if not buyer_business.get("phone_number") and body.get("business_phone"):
+        buyer_business["phone_number"] = body.get("business_phone")
+
+    pdf_bytes = _gen(
+        order=body,
+        buyer_user=buyer_user,
+        buyer_business=buyer_business,
+        supplier_user=supplier_user,
+        supplier_business=supplier_business,
+    )
+
+    filename = f"NODE_Spec_{body.get('order_id', 'draft')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )
 
 
