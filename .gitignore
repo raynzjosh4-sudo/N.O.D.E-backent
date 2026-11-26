@@ -52,7 +52,7 @@ scratch/
 
 
 
-app/static/
+!app/static/nodeicon.png
 src/Emailimages/
 app/templates/preview_*.html
 

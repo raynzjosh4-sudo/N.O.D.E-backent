@@ -18,17 +18,14 @@ from app.services.pdf.styles import (
     PRIMARY_COLOR,
     _format_ugx,
     _make_qr_image,
+    get_node_icon_image,
 )
 
 
 def build_header(date_str: str, page_width: float) -> Table:
     """Build the dark executive top banner with logo and official spec sheet badge."""
-    header_logo_cells = []
-    if NODE_ICON_PATH.exists():
-        logo_img = Image(str(NODE_ICON_PATH), width=28, height=28)
-        header_logo_cells.append(logo_img)
-    else:
-        header_logo_cells.append(Paragraph("<font color='#00BFFF'>●</font>", ParagraphStyle("Bullet", fontSize=18)))
+    logo_img = get_node_icon_image(width=28, height=28)
+    header_logo_cells = [logo_img]
 
     brand_para = Paragraph(
         "<font size='18' color='#FFFFFF'><b>N.O.D.E.</b></font><br/>"
@@ -62,30 +59,33 @@ def build_header(date_str: str, page_width: float) -> Table:
 
 
 def build_merchant_bar(buyer_user: dict, buyer_business: dict, page_width: float) -> Table:
-    """Build merchant details card (recipient, destination depot, contact)."""
-    buyer_name = (buyer_user.get("full_name") or "MERCHANT BUYER").upper()
+    """Build merchant details card (buyer identity, destination depot, contact phone/email)."""
+    buyer_name = (buyer_user.get("full_name") or buyer_business.get("legal_name") or "MERCHANT BUYER").upper()
     biz_legal = buyer_business.get("legal_name") or buyer_user.get("email") or "Wholesale Account"
     city = (buyer_business.get("city") or "KAMPALA").upper()
     address = buyer_business.get("physical_address") or "Headquarters / Central Depot"
-    phone = buyer_business.get("phone_number") or buyer_user.get("phone_number") or "+256 700 000 000"
+    phone = buyer_business.get("phone_number") or buyer_user.get("phone_number") or "Phone: Direct Contact"
+    email = buyer_user.get("email") or ""
 
     merch_col1 = Paragraph(
-        f"<font size='6' color='#71717A'><b>ISSUED TO MERCHANT</b></font><br/>"
+        f"<font size='6' color='#71717A'><b>BUYER / MERCHANT IDENTITY</b></font><br/>"
         f"<font size='8.5' color='#1A1A2E'><b>{buyer_name}</b></font><br/>"
         f"<font size='6.5' color='#71717A'>{biz_legal}</font>",
         ParagraphStyle("Merch1", leading=9),
     )
     merch_col2 = Paragraph(
-        f"<font size='6' color='#71717A'><b>LOGISTICS ORIGIN / DESTINATION</b></font><br/>"
+        f"<font size='6' color='#71717A'><b>LOGISTICS DESTINATION</b></font><br/>"
         f"<font size='8.5' color='#1A1A2E'><b>{city}</b></font><br/>"
         f"<font size='6.5' color='#71717A'>{address}</font>",
         ParagraphStyle("Merch2", leading=9),
     )
+    email_str = f"<br/><font size='6.5' color='#71717A'>{email}</font>" if email else ""
     merch_col3 = Paragraph(
         f"<para align='right'>"
-        f"<font size='6' color='#71717A'><b>CONTACT REGISTRY</b></font><br/>"
-        f"<font size='8.5' color='#1A1A2E'><b>{phone}</b></font><br/>"
-        f"<font size='6.5' color='#00BFFF'><b>NODE PARTNER NETWORK</b></font>"
+        f"<font size='6' color='#71717A'><b>BUYER CONTACT REGISTRY</b></font><br/>"
+        f"<font size='8.5' color='#00BFFF'><b>{phone}</b></font>"
+        f"{email_str}<br/>"
+        f"<font size='6' color='#22C55E'><b>VERIFIED SPEC SHEET</b></font>"
         f"</para>",
         ParagraphStyle("Merch3", leading=9),
     )
