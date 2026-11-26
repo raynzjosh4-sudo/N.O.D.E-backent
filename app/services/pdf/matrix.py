@@ -1,10 +1,12 @@
 """
 Product entry line-item flowables: header banner, specs row, color-size matrix, and subtotal.
 """
+import io
 from typing import Any
+import urllib.request
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import Paragraph, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, Table, TableStyle
 
 from app.services.pdf.styles import (
     BORDER_COLOR,
@@ -14,6 +16,42 @@ from app.services.pdf.styles import (
     PRIMARY_COLOR,
     _format_ugx,
 )
+
+
+def _fetch_product_image_flowable(url: str, width: float = 64.0, height: float = 64.0) -> Table:
+    """Fetch product photographic image and wrap it in an executive framed container."""
+    img_flowable = None
+    if url and str(url).startswith("http"):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = resp.read()
+            if len(data) > 100:
+                buf = io.BytesIO(data)
+                img_flowable = Image(buf, width=width, height=height)
+        except Exception:
+            img_flowable = None
+
+    if img_flowable is None:
+        ph_text = Paragraph(
+            "<para align='center'><font size='6.5' color='#71717A'><b>PRODUCT<br/>PHOTO</b></font></para>",
+            ParagraphStyle("PhStyle", leading=8.5),
+        )
+        img_flowable = ph_text
+
+    container = Table([[img_flowable]], colWidths=[width + 8], rowHeights=[height + 8])
+    container.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), HexColor("#18181B")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("BOX", (0, 0), (-1, -1), 0.5, HexColor("#3F3F46")),
+        ("LINEBEFORE", (0, 0), (0, -1), 2.5, PRIMARY_COLOR),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    return container
 
 
 def _make_color_swatch_flowable(label: str, hex_code: str, max_w: float) -> Table:
@@ -132,6 +170,16 @@ def build_entry_flowables(
         or "Standard wholesale trading terms apply. Goods inspected upon delivery."
     )
 
+    # 2. Product Specs Row with Real Photographic Image Frame
+    img_url = (
+        product.get("imageUrl")
+        or product.get("image_url")
+        or entry.get("imageUrl")
+        or entry.get("image_url")
+        or ""
+    )
+    img_container = _fetch_product_image_flowable(img_url, width=60.0, height=60.0)
+
     specs_left = Paragraph(
         f"<font size='6' color='#71717A'><b>SUPPLIER &amp; WAREHOUSE CONTACT</b></font><br/>"
         f"<font size='8' color='#FFFFFF'><b>{supplier_name}</b></font><br/>"
@@ -139,25 +187,26 @@ def build_entry_flowables(
         f"<font size='6.5' color='#00BFFF'><b>PHONE: {supplier_phone}</b></font>",
         ParagraphStyle("SpecsLeft", leading=8.5),
     )
-    stock_badge = Paragraph(
-        f"<font size='6' color='#71717A'><b>AVAILABILITY</b></font><br/>"
-        f"<font size='7.5' color='#22C55E'><b>{current_stock} UNITS</b></font>",
-        ParagraphStyle("Stk", leading=8),
-    )
-    lead_badge = Paragraph(
-        f"<font size='6' color='#71717A'><b>LEAD TIME</b></font><br/>"
-        f"<font size='7.5' color='#00BFFF'><b>{lead_time} DAYS</b></font>",
-        ParagraphStyle("Lead", leading=8),
+    avail_lead_block = Paragraph(
+        f"<font size='6' color='#71717A'><b>AVAILABILITY &amp; LEAD TIME</b></font><br/>"
+        f"<font size='7.5' color='#22C55E'><b>{current_stock} UNITS READY</b></font><br/>"
+        f"<font size='7.5' color='#00BFFF'><b>DISPATCH: {lead_time} DAYS</b></font>",
+        ParagraphStyle("AvailLead", leading=8.5),
     )
     terms_block = Paragraph(
-        f"<font size='6' color='#71717A'><b>TRADING TERMS</b></font><br/>"
+        f"<font size='6' color='#71717A'><b>COMMERCIAL TRADING TERMS</b></font><br/>"
         f"<font size='6.5' color='#A1A1AA'>{trading_terms}</font>",
         ParagraphStyle("Terms", leading=8),
     )
 
+    img_col_w = 76.0
+    supplier_col_w = page_width * 0.36
+    avail_col_w = page_width * 0.24
+    terms_col_w = page_width - (img_col_w + supplier_col_w + avail_col_w)
+
     specs_table = Table(
-        [[specs_left, stock_badge, lead_badge, terms_block]],
-        colWidths=[page_width * 0.35, page_width * 0.18, page_width * 0.15, page_width * 0.32],
+        [[img_container, specs_left, avail_lead_block, terms_block]],
+        colWidths=[img_col_w, supplier_col_w, avail_col_w, terms_col_w],
     )
     specs_table.setStyle(
         TableStyle([
@@ -165,8 +214,8 @@ def build_entry_flowables(
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("TOPPADDING", (0, 0), (-1, -1), 8),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-            ("LEFTPADDING", (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
             ("LINEBEFORE", (1, 0), (-1, -1), 0.5, BORDER_DARK),
         ])
     )
