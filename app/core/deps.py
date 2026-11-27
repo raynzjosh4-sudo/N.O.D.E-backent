@@ -80,13 +80,21 @@ async def get_current_user(
 async def require_supplier_or_admin(
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Ensure the user is a registered supplier or an administrator."""
+    """Ensure the user is authenticated. Any authenticated user can manage products as a supplier."""
     role = (user.get("role") or "").lower()
     if role not in ("supplier", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access restricted: You must be a confirmed supplier or administrator to perform this action.",
-        )
+        user_id = user.get("id")
+        if user_id:
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    await client.patch(
+                        f"{SUPABASE_URL}/rest/v1/users_table?id=eq.{user_id}",
+                        json={"role": "supplier"},
+                        headers=HEADERS,
+                    )
+            except Exception:
+                pass
+        user["role"] = "supplier"
     return user
 
 

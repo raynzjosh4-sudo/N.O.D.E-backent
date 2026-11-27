@@ -43,6 +43,15 @@ async def create_order(
     order_data["created_at"] = now
     order_data["updated_at"] = now
 
+    # Ensure buyer email is always resolved for notifications
+    if not order_data.get("buyer_email"):
+        try:
+            u = await fetch_user(current_user_id)
+            if u and u.get("email"):
+                order_data["buyer_email"] = u["email"]
+        except Exception:
+            pass
+
     result = await upsert_order(order_data)
 
     background_tasks.add_task(

@@ -21,6 +21,8 @@ class OrderStatus(str, Enum):
 class OrderCreateRequest(BaseModel):
     order_id: str
     supplier_id: str
+    buyer_email: Optional[str] = None
+    supplier_email: Optional[str] = None
     business_name: str
     business_phone: str
     business_city: str
@@ -31,6 +33,8 @@ class OrderCreateRequest(BaseModel):
     entries_json: List[Any] = Field(default_factory=list)
     pdf_id: Optional[str] = None
     pdf_url: Optional[str] = None
+
+    model_config = {"extra": "allow"}
 
 
 class OrderStatusUpdateRequest(BaseModel):

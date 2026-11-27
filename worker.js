@@ -3,7 +3,7 @@
  * Cloudflare Edge Worker for:
  * 1. R2 media uploads and image serving (nodemediafiles.crimchart.com).
  * 2. Product SEO, WhatsApp link previews, and /sitemap.xml (node.crimchart.com).
- * Version: 2.0.0
+ * Version: 2.1.0
  */
 
 import productSeoWorker from "./product_seo_worker.js";
@@ -124,12 +124,7 @@ async function handleMediaRequest(request, env) {
       throw requestError(400, "Unsupported media folder.");
     }
 
-    if (folder === "products" || folder === "categories") {
-      const role = await getUserRole(user.id, token, supabaseUrl, env);
-      if (role !== "supplier" && role !== "admin") {
-        throw requestError(403, "Only suppliers and admins can upload media.");
-      }
-    }
+    // Any authenticated user can upload product and category media
 
     const contentType = request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
     const extensions = {
