@@ -100,10 +100,11 @@ async def send_auth_email(
             detail="Email service is not configured on the server.",
         )
 
-    # Call Resend REST API
+    # Call Resend REST API (include browser User-Agent to bypass Cloudflare WAF Error 1010)
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     }
     payload = {
         "from": sender,
